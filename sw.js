@@ -1,4 +1,4 @@
-const CACHE_NAME = 'wake-v1';
+const CACHE_NAME = 'wake-v2';
 const STATIC_ASSETS = [
   './',
   './index.html',

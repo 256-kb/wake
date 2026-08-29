@@ -23,10 +23,11 @@
     :root {
       --primary: #007AFF;
       --primary-dark: #0056b3;
+      --danger: #FF3B30;
       --bg-glass: rgba(255, 255, 255, 0.92);
       --bg-glass-dark: rgba(28, 28, 30, 0.88);
       --text-dark: #1c1c1e;
-      --shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
+      --shadow: 0 4px 20px rgba(0, 0, 0, 0.18);
       --safe-top: env(safe-area-inset-top, 0px);
       --safe-bottom: env(safe-area-inset-bottom, 0px);
     }
@@ -57,37 +58,43 @@
       z-index: 1;
     }
 
-    /* Minimal User Position Marker */
-    .user-position-marker {
+    /* ==========================================================
+       USER LOCATION MARKER & ROTATING VISION BEAM
+       ========================================================== */
+    .user-marker-container {
       position: relative;
+      width: 160px;
+      height: 160px;
       display: flex;
       align-items: center;
       justify-content: center;
+      pointer-events: none;
+    }
+
+    .user-beam {
+      position: absolute;
+      width: 160px;
+      height: 160px;
+      top: 0;
+      left: 0;
+      transform-origin: 80px 80px;
+      transition: transform 0.12s linear;
+      pointer-events: none;
+      display: none;
     }
 
     .user-dot {
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
       width: 18px;
       height: 18px;
       background-color: #007AFF;
       border: 3.5px solid #FFFFFF;
       border-radius: 50%;
       box-shadow: 0 2px 8px rgba(0, 0, 0, 0.35);
-      z-index: 2;
-    }
-
-    .user-heading {
-      position: absolute;
-      top: -12px;
-      left: 50%;
-      transform: translateX(-50%);
-      width: 0;
-      height: 0;
-      border-left: 6px solid transparent;
-      border-right: 6px solid transparent;
-      border-bottom: 12px solid #007AFF;
-      filter: drop-shadow(0 -1px 2px rgba(0,0,0,0.25));
-      transition: transform 0.2s ease-out;
-      display: none;
+      z-index: 10;
     }
 
     /* Destination Marker */
@@ -112,7 +119,36 @@
       border-radius: 50%;
     }
 
-    /* Top Floating Search & Info Pill */
+    /* Radar Map Marker (Shown ONLY on active route) */
+    .radar-marker-pin {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .radar-badge {
+      background: #1C1C1E;
+      color: #FFFFFF;
+      border: 2px solid #FF9500;
+      border-radius: 8px;
+      padding: 2px 6px;
+      font-size: 11px;
+      font-weight: 800;
+      box-shadow: 0 3px 10px rgba(0,0,0,0.35);
+      display: flex;
+      align-items: center;
+      gap: 3px;
+      white-space: nowrap;
+    }
+
+    .radar-badge svg {
+      width: 12px;
+      height: 12px;
+      fill: #FF9500;
+    }
+
+    /* Top Floating Search & HUD Area */
     .top-container {
       position: absolute;
       top: calc(var(--safe-top) + 12px);
@@ -214,6 +250,21 @@
       color: #EBEBF599;
     }
 
+    /* Radar alert in HUD */
+    .hud-radar-alert {
+      display: none;
+      align-items: center;
+      gap: 6px;
+      font-size: 13px;
+      font-weight: 700;
+      color: #FF9F0A;
+      margin-top: 2px;
+    }
+
+    .hud-radar-alert.active {
+      display: flex;
+    }
+
     .btn-clear-route {
       background: rgba(255, 255, 255, 0.15);
       border: none;
@@ -232,6 +283,100 @@
 
     .btn-clear-route:active {
       background: rgba(255, 255, 255, 0.3);
+    }
+
+    /* ==========================================================
+       BOTTOM LEFT: SPEEDOMETER & SPEED LIMIT SIGN
+       ========================================================== */
+    .bottom-left-hud {
+      position: absolute;
+      bottom: calc(var(--safe-bottom) + 24px);
+      left: 16px;
+      z-index: 1000;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 8px;
+      pointer-events: none;
+    }
+
+    /* Speed Limit Sign (European Round Road Sign) */
+    .speed-limit-sign {
+      width: 44px;
+      height: 44px;
+      background: #FFFFFF;
+      border: 4.5px solid #FF3B30;
+      border-radius: 50%;
+      box-shadow: 0 4px 15px rgba(0, 0, 0, 0.3);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: all 0.25s ease;
+    }
+
+    .speed-limit-val {
+      font-size: 17px;
+      font-weight: 900;
+      color: #1C1C1E;
+      letter-spacing: -0.5px;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    }
+
+    /* Blinking pulse when exceeding speed limit */
+    @keyframes blinkOverspeed {
+      0% {
+        transform: scale(1);
+        box-shadow: 0 0 0 0 rgba(255, 59, 48, 0.8);
+        background-color: #FFFFFF;
+      }
+      50% {
+        transform: scale(1.22);
+        box-shadow: 0 0 20px 8px rgba(255, 59, 48, 0.95);
+        background-color: #FFD4D2;
+      }
+      100% {
+        transform: scale(1);
+        box-shadow: 0 0 0 0 rgba(255, 59, 48, 0.8);
+        background-color: #FFFFFF;
+      }
+    }
+
+    .speed-limit-sign.overspeed {
+      animation: blinkOverspeed 0.6s infinite ease-in-out;
+      border-color: #FF1A0D;
+    }
+
+    /* Speedometer Pill */
+    .speedometer-box {
+      background: var(--bg-glass-dark);
+      backdrop-filter: blur(20px);
+      -webkit-backdrop-filter: blur(20px);
+      border: 0.5px solid rgba(255, 255, 255, 0.2);
+      border-radius: 18px;
+      padding: 7px 12px;
+      box-shadow: var(--shadow);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      min-width: 64px;
+      color: #FFFFFF;
+    }
+
+    .speed-val {
+      font-size: 26px;
+      font-weight: 800;
+      line-height: 1;
+      letter-spacing: -1px;
+      font-variant-numeric: tabular-nums;
+    }
+
+    .speed-unit {
+      font-size: 9px;
+      font-weight: 700;
+      color: #8E8E93;
+      margin-top: 2px;
+      letter-spacing: 0.5px;
     }
 
     /* Floating Action Buttons (Bottom Right) */
@@ -281,7 +426,7 @@
     /* Toast Notification */
     .toast {
       position: absolute;
-      bottom: calc(var(--safe-bottom) + 80px);
+      bottom: calc(var(--safe-bottom) + 90px);
       left: 50%;
       transform: translateX(-50%) translateY(20px);
       background: rgba(28, 28, 30, 0.92);
@@ -341,7 +486,6 @@
       background: rgba(0, 122, 255, 0.1);
     }
 
-    /* Leaflet Attribution styling override for minimalist look */
     .leaflet-control-attribution {
       font-size: 9px !important;
       background: rgba(255, 255, 255, 0.6) !important;
@@ -359,7 +503,6 @@
 
   <!-- Top Search & HUD Area -->
   <div class="top-container">
-    <!-- Clean Search Bar -->
     <div class="search-box" id="searchBox">
       <div class="search-icon">
         <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
@@ -380,14 +523,30 @@
           <span class="hud-time" id="hudTime">-- min</span>
           <span class="hud-dist" id="hudDist">-- km</span>
         </div>
+        <div class="hud-radar-alert" id="hudRadarAlert">
+          <svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor">
+            <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-2h2v2zm0-4h-2V7h2v6z"/>
+          </svg>
+          <span id="hudRadarText">Radar à 400m</span>
+        </div>
       </div>
       <button class="btn-clear-route" id="btnClearRoute" title="Annuler l'itinéraire">✕</button>
     </div>
   </div>
 
+  <!-- Bottom-Left Speedometer & Speed Limit Sign -->
+  <div class="bottom-left-hud">
+    <div class="speed-limit-sign" id="speedLimitSign">
+      <span class="speed-limit-val" id="speedLimitVal">50</span>
+    </div>
+    <div class="speedometer-box">
+      <div class="speed-val" id="speedVal">0</div>
+      <div class="speed-unit">KM/H</div>
+    </div>
+  </div>
+
   <!-- Bottom-Right Floating Controls -->
   <div class="fab-group">
-    <!-- Recenter / Auto-follow button -->
     <button class="fab active" id="btnRecenter" title="Recentrer">
       <svg viewBox="0 0 24 24">
         <path d="M12 8c-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4-1.79-4-4-4zm8.94 3A8.994 8.994 0 0 0 13 3.06V1h-2v2.06A8.994 8.994 0 0 0 3.06 11H1v2h2.06A8.994 8.994 0 0 0 11 20.94V23h2v-2.06A8.994 8.994 0 0 0 20.94 13H23v-2h-2.06zM12 19c-3.87 0-7-3.13-7-7s3.13-7 7-7 7 3.13 7 7-3.13 7-7 7z"/>
@@ -403,15 +562,22 @@
 
   <script>
     /* ==========================================================
-       APPLICATION STATE & CONFIG
+       APPLICATION STATE
        ========================================================== */
     const state = {
-      userCoords: null,       // [lat, lon]
-      userAccuracy: null,     // meters
-      userHeading: null,      // degrees
-      destination: null,      // [lat, lon]
-      isAutoFollow: true,     // Center on user position updates
-      activeRoute: null,      // OSRM GeoJSON / polyline data
+      userCoords: null,         // [lat, lon]
+      userAccuracy: null,       // meters
+      userHeading: null,        // degrees (0 = North)
+      compassHeading: null,     // degrees from device compass
+      currentSpeedKmh: 0,       // current speed in km/h
+      speedLimitKmh: 50,        // current road speed limit
+      destination: null,        // [lat, lon]
+      isAutoFollow: true,       // auto-center map on user
+      activeRoute: null,        // OSRM route data
+      routeCoordinates: [],     // Array of [lat, lon]
+      routeRadars: [],          // Speed cameras filtered on the route
+      radarMarkers: [],         // Leaflet markers for radars
+      lastPosTime: null,
       wakeLock: null,
       watchId: null
     };
@@ -419,30 +585,41 @@
     /* ==========================================================
        MAP INITIALIZATION
        ========================================================== */
-    // Default fallback position (Paris)
     const map = L.map('map', {
       zoomControl: false,
       attributionControl: true
     }).setView([48.8566, 2.3522], 15);
 
-    // High quality OpenStreetMap tiles
     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
       maxZoom: 19,
       attribution: '© OpenStreetMap'
     }).addTo(map);
 
     /* ==========================================================
-       CUSTOM MARKERS & LAYERS
+       CUSTOM USER MARKER WITH VISION CONE GRADIENT
        ========================================================== */
-    // User Location Marker (Clean Blue Dot with Crisp White Border)
     const userMarkerIcon = L.divIcon({
-      className: 'user-position-marker',
+      className: 'user-marker-icon-wrapper',
       html: `
-        <div class="user-heading" id="userHeadingArrow"></div>
-        <div class="user-dot"></div>
+        <div class="user-marker-container">
+          <div class="user-beam" id="userBeam">
+            <svg viewBox="0 0 160 160" width="160" height="160">
+              <defs>
+                <radialGradient id="beamGrad" cx="50%" cy="50%" r="50%" fx="50%" fy="50%">
+                  <stop offset="0%" stop-color="#007AFF" stop-opacity="0.55" />
+                  <stop offset="35%" stop-color="#007AFF" stop-opacity="0.30" />
+                  <stop offset="70%" stop-color="#007AFF" stop-opacity="0.10" />
+                  <stop offset="100%" stop-color="#007AFF" stop-opacity="0.0" />
+                </radialGradient>
+              </defs>
+              <path d="M 80 80 L 30 10 A 80 80 0 0 1 130 10 Z" fill="url(#beamGrad)" />
+            </svg>
+          </div>
+          <div class="user-dot"></div>
+        </div>
       `,
-      iconSize: [24, 24],
-      iconAnchor: [12, 12]
+      iconSize: [160, 160],
+      iconAnchor: [80, 80]
     });
 
     let userMarker = null;
@@ -459,16 +636,21 @@
     });
 
     /* ==========================================================
-       UI ELEMENTS
+       DOM ELEMENTS
        ========================================================== */
     const routeHud = document.getElementById('routeHud');
     const hudTime = document.getElementById('hudTime');
     const hudDist = document.getElementById('hudDist');
+    const hudRadarAlert = document.getElementById('hudRadarAlert');
+    const hudRadarText = document.getElementById('hudRadarText');
     const btnClearRoute = document.getElementById('btnClearRoute');
     const btnRecenter = document.getElementById('btnRecenter');
     const searchInput = document.getElementById('searchInput');
     const searchResults = document.getElementById('searchResults');
     const toast = document.getElementById('toast');
+    const speedValEl = document.getElementById('speedVal');
+    const speedLimitSignEl = document.getElementById('speedLimitSign');
+    const speedLimitValEl = document.getElementById('speedLimitVal');
 
     function showToast(message, duration = 3000) {
       toast.textContent = message;
@@ -477,11 +659,79 @@
     }
 
     /* ==========================================================
+       SPEEDOMETER & SPEED LIMIT LOGIC
+       ========================================================== */
+    function updateSpeed(newSpeedKmh) {
+      state.currentSpeedKmh = Math.max(0, Math.round(newSpeedKmh));
+      speedValEl.textContent = state.currentSpeedKmh;
+
+      // Check Overspeed (> limit)
+      if (state.currentSpeedKmh > state.speedLimitKmh) {
+        speedLimitSignEl.classList.add('overspeed');
+      } else {
+        speedLimitSignEl.classList.remove('overspeed');
+      }
+    }
+
+    function setSpeedLimit(limit) {
+      if (limit && !isNaN(limit) && limit > 0) {
+        state.speedLimitKmh = parseInt(limit, 10);
+        speedLimitValEl.textContent = state.speedLimitKmh;
+      }
+      updateSpeed(state.currentSpeedKmh);
+    }
+
+    /* ==========================================================
+       HEADING & COMPASS ORIENTATION (iOS & GPS)
+       ========================================================== */
+    function updateHeadingDisplay(headingDeg) {
+      const beamEl = document.getElementById('userBeam');
+      if (beamEl && headingDeg !== null && !isNaN(headingDeg)) {
+        beamEl.style.display = 'block';
+        beamEl.style.transform = `rotate(${headingDeg}deg)`;
+      }
+    }
+
+    // Device Compass listener (especially for iOS Safari)
+    function handleDeviceOrientation(e) {
+      let compass = null;
+      if (e.webkitCompassHeading !== undefined) {
+        // iOS Safari provides exact compass heading (0 = North)
+        compass = e.webkitCompassHeading;
+      } else if (e.alpha !== null) {
+        // Android fallback
+        compass = 360 - e.alpha;
+      }
+
+      if (compass !== null) {
+        state.compassHeading = compass;
+        // If stopped or walking slow (< 5 km/h), prefer compass
+        if (state.currentSpeedKmh < 5 || state.userHeading === null) {
+          updateHeadingDisplay(compass);
+        }
+      }
+    }
+
+    function initCompassPermission() {
+      if (typeof DeviceOrientationEvent !== 'undefined' && typeof DeviceOrientationEvent.requestPermission === 'function') {
+        DeviceOrientationEvent.requestPermission()
+          .then((permissionState) => {
+            if (permissionState === 'granted') {
+              window.addEventListener('deviceorientation', handleDeviceOrientation, true);
+            }
+          })
+          .catch(console.warn);
+      } else {
+        window.addEventListener('deviceorientation', handleDeviceOrientation, true);
+      }
+    }
+
+    /* ==========================================================
        GPS TRACKING (GEOLOCATION API)
        ========================================================== */
     function initGPS() {
       if (!('geolocation' in navigator)) {
-        showToast('Géolocalisation non supportée par votre navigateur');
+        showToast('Géolocalisation non supportée');
         return;
       }
 
@@ -499,11 +749,34 @@
     }
 
     function onLocationSuccess(pos) {
-      const { latitude, longitude, accuracy, heading } = pos.coords;
+      const { latitude, longitude, accuracy, heading, speed } = pos.coords;
+      const now = Date.now();
       const prevCoords = state.userCoords;
+
       state.userCoords = [latitude, longitude];
       state.userAccuracy = accuracy;
-      state.userHeading = heading;
+
+      // Speed calculation
+      let calculatedSpeedKmh = 0;
+      if (speed !== null && !isNaN(speed) && speed >= 0) {
+        calculatedSpeedKmh = speed * 3.6;
+      } else if (prevCoords && state.lastPosTime) {
+        const dt = (now - state.lastPosTime) / 1000;
+        if (dt > 0.5 && dt < 10) {
+          const dMeters = calculateDistance(prevCoords[0], prevCoords[1], latitude, longitude);
+          calculatedSpeedKmh = (dMeters / dt) * 3.6;
+        }
+      }
+      state.lastPosTime = now;
+      updateSpeed(calculatedSpeedKmh);
+
+      // Heading calculation
+      if (heading !== null && !isNaN(heading) && calculatedSpeedKmh >= 5) {
+        state.userHeading = heading;
+        updateHeadingDisplay(heading);
+      } else if (state.compassHeading !== null) {
+        updateHeadingDisplay(state.compassHeading);
+      }
 
       // Create or update user position marker
       if (!userMarker) {
@@ -530,25 +803,20 @@
         }
       }
 
-      // Orientation arrow update if available
-      const headingEl = document.getElementById('userHeadingArrow');
-      if (headingEl && heading !== null && !isNaN(heading)) {
-        headingEl.style.display = 'block';
-        headingEl.style.transform = `translateX(-50%) rotate(${heading}deg)`;
-      }
-
       // Auto-follow center
       if (state.isAutoFollow) {
         map.panTo([latitude, longitude], { animate: true, duration: 0.5 });
       }
 
-      // If active destination and user moved significantly, recalculate route
+      // Active route tracking & dynamic radar distance check
       if (state.destination && prevCoords) {
         const distMoved = calculateDistance(prevCoords[0], prevCoords[1], latitude, longitude);
-        if (distMoved > 25) { // 25 meters threshold
+        if (distMoved > 30) {
           calculateRoute(state.destination, false);
         }
       }
+
+      checkUpcomingRadars(latitude, longitude);
     }
 
     function onLocationError(err) {
@@ -578,7 +846,6 @@
       }
     });
 
-    // Map tap/click to set destination
     map.on('click', (e) => {
       setDestination([e.latlng.lat, e.latlng.lng]);
     });
@@ -586,7 +853,6 @@
     function setDestination(latlng) {
       state.destination = latlng;
 
-      // Update destination marker
       if (destMarker) {
         destMarker.setLatLng(latlng);
       } else {
@@ -602,7 +868,7 @@
     }
 
     /* ==========================================================
-       OSRM ROUTING
+       OSRM ROUTING & SPEED CAMERAS ON ROUTE
        ========================================================== */
     async function calculateRoute(destCoords, fitBounds = true) {
       if (!state.userCoords) return;
@@ -610,7 +876,7 @@
       const [startLat, startLon] = state.userCoords;
       const [destLat, destLon] = destCoords;
 
-      const url = `https://router.project-osrm.org/route/v1/driving/${startLon},${startLat};${destLon},${destLat}?overview=full&geometries=geojson`;
+      const url = `https://router.project-osrm.org/route/v1/driving/${startLon},${startLat};${destLon},${destLat}?overview=full&geometries=geojson&steps=true`;
 
       try {
         const response = await fetch(url);
@@ -624,15 +890,18 @@
         const route = data.routes[0];
         state.activeRoute = route;
 
-        // Coordinates GeoJSON: [lon, lat] -> Leaflet expects [lat, lon]
-        const latlngs = route.geometry.coordinates.map(coord => [coord[1], coord[0]]);
+        // Leaflet coordinates: [lat, lon]
+        state.routeCoordinates = route.geometry.coordinates.map(coord => [coord[1], coord[0]]);
+
+        // Infer road speed limit from route step or defaults
+        inferSpeedLimitFromRoute(route);
 
         // Clear existing route layers
         if (routeBorderLayer) map.removeLayer(routeBorderLayer);
         if (routeLineLayer) map.removeLayer(routeLineLayer);
 
-        // Outer contrast casing (makes route pop against all map features)
-        routeBorderLayer = L.polyline(latlngs, {
+        // Outer contrast casing
+        routeBorderLayer = L.polyline(state.routeCoordinates, {
           color: '#FFFFFF',
           weight: 9,
           opacity: 0.95,
@@ -641,7 +910,7 @@
         }).addTo(map);
 
         // Distinct thick blue route line
-        routeLineLayer = L.polyline(latlngs, {
+        routeLineLayer = L.polyline(state.routeCoordinates, {
           color: '#0066FF',
           weight: 6,
           opacity: 1,
@@ -665,20 +934,177 @@
         routeHud.classList.add('active');
 
         if (fitBounds) {
-          const bounds = L.latLngBounds(latlngs);
+          const bounds = L.latLngBounds(state.routeCoordinates);
           map.fitBounds(bounds, { padding: [80, 50], maxZoom: 17 });
           state.isAutoFollow = false;
           btnRecenter.classList.remove('active');
         }
+
+        // Fetch & display speed cameras ONLY on this active route
+        fetchSpeedCamerasOnRoute(state.routeCoordinates);
+
       } catch (err) {
         console.error('OSRM fetch error:', err);
         showToast('Erreur lors du calcul de route');
       }
     }
 
+    function inferSpeedLimitFromRoute(route) {
+      if (route.legs && route.legs[0] && route.legs[0].steps) {
+        const firstStep = route.legs[0].steps[0];
+        const roadName = (firstStep.name || '').toLowerCase();
+        const ref = (firstStep.ref || '').toLowerCase();
+
+        if (ref.startsWith('a') || roadName.includes('autoroute')) {
+          setSpeedLimit(130);
+        } else if (ref.startsWith('n') || roadName.includes('voie rapide') || roadName.includes('rocade')) {
+          setSpeedLimit(110);
+        } else if (ref.startsWith('d') || roadName.includes('route')) {
+          setSpeedLimit(80);
+        } else {
+          setSpeedLimit(50);
+        }
+      }
+    }
+
+    /* ==========================================================
+       SPEED CAMERAS: FETCH & FILTER ON ROUTE (OVERPASS API)
+       ========================================================== */
+    async function fetchSpeedCamerasOnRoute(routeCoords) {
+      clearRadarMarkers();
+
+      if (!routeCoords || routeCoords.length < 2) return;
+
+      // Compute bounding box with 0.015 margin
+      let minLat = 90, maxLat = -90, minLon = 180, maxLon = -180;
+      for (const [lat, lon] of routeCoords) {
+        if (lat < minLat) minLat = lat;
+        if (lat > maxLat) maxLat = lat;
+        if (lon < minLon) minLon = lon;
+        if (lon > maxLon) maxLon = lon;
+      }
+      minLat -= 0.01; maxLat += 0.01;
+      minLon -= 0.01; maxLon += 0.01;
+
+      const bbox = `${minLat.toFixed(4)},${minLon.toFixed(4)},${maxLat.toFixed(4)},${maxLon.toFixed(4)}`;
+      const query = `[out:json][timeout:8];(node["highway"="speed_camera"](${bbox});node["enforcement"="maxspeed"](${bbox}););out body;`;
+
+      try {
+        const endpoints = [
+          'https://overpass-api.de/api/interpreter',
+          'https://lz4.overpass-api.de/api/interpreter'
+        ];
+
+        let data = null;
+        for (const ep of endpoints) {
+          try {
+            const params = new URLSearchParams();
+            params.append('data', query);
+            const res = await fetch(ep, {
+              method: 'POST',
+              body: params,
+              headers: { 'User-Agent': 'WakeGPS/1.0' }
+            });
+            if (res.ok) {
+              data = await res.json();
+              break;
+            }
+          } catch (e) {
+            console.warn('Endpoint failed:', ep, e);
+          }
+        }
+
+        if (!data || !data.elements || !data.elements.length) return;
+
+        // Filter radars strictly within 35 meters of the calculated route polyline
+        state.routeRadars = [];
+        for (const el of data.elements) {
+          const camLat = el.lat;
+          const camLon = el.lon;
+          const distToRoute = minDistanceToPolyline(camLat, camLon, routeCoords);
+
+          if (distToRoute <= 35) { // 35 meters corridor
+            const speedLimit = el.tags?.maxspeed || el.tags?.['maxspeed:type'] || 'RADAR';
+            state.routeRadars.push({
+              lat: camLat,
+              lon: camLon,
+              maxspeed: speedLimit,
+              id: el.id
+            });
+
+            // Create minimalist radar pin on map
+            const radarIcon = L.divIcon({
+              className: 'radar-marker-pin',
+              html: `
+                <div class="radar-badge">
+                  <svg viewBox="0 0 24 24">
+                    <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-2h2v2zm0-4h-2V7h2v6z"/>
+                  </svg>
+                  <span>${speedLimit}</span>
+                </div>
+              `,
+              iconSize: [60, 24],
+              iconAnchor: [30, 24]
+            });
+
+            const marker = L.marker([camLat, camLon], { icon: radarIcon, zIndexOffset: 950 }).addTo(map);
+            state.radarMarkers.push(marker);
+          }
+        }
+
+        if (state.routeRadars.length > 0) {
+          showToast(`${state.routeRadars.length} radar(s) détecté(s) sur votre trajet`);
+        }
+
+      } catch (err) {
+        console.warn('Speed camera fetch error:', err);
+      }
+    }
+
+    function checkUpcomingRadars(userLat, userLon) {
+      if (!state.routeRadars || !state.routeRadars.length) {
+        hudRadarAlert.classList.remove('active');
+        return;
+      }
+
+      let closestRadar = null;
+      let minDistance = Infinity;
+
+      for (const radar of state.routeRadars) {
+        const d = calculateDistance(userLat, userLon, radar.lat, radar.lon);
+        if (d < minDistance) {
+          minDistance = d;
+          closestRadar = radar;
+        }
+      }
+
+      // If upcoming radar is within 600m
+      if (closestRadar && minDistance <= 600) {
+        hudRadarText.textContent = `Radar à ${Math.round(minDistance)}m (${closestRadar.maxspeed} km/h)`;
+        hudRadarAlert.classList.add('active');
+
+        // Set speed limit sign to the radar speed limit if numeric
+        if (closestRadar.maxspeed && !isNaN(closestRadar.maxspeed)) {
+          setSpeedLimit(closestRadar.maxspeed);
+        }
+      } else {
+        hudRadarAlert.classList.remove('active');
+      }
+    }
+
+    function clearRadarMarkers() {
+      for (const m of state.radarMarkers) {
+        map.removeLayer(m);
+      }
+      state.radarMarkers = [];
+      state.routeRadars = [];
+      hudRadarAlert.classList.remove('active');
+    }
+
     function clearRoute() {
       state.destination = null;
       state.activeRoute = null;
+      state.routeCoordinates = [];
 
       if (destMarker) {
         map.removeLayer(destMarker);
@@ -693,16 +1119,63 @@
         routeLineLayer = null;
       }
 
+      clearRadarMarkers();
       routeHud.classList.remove('active');
       searchInput.value = '';
       searchResults.classList.remove('active');
       searchResults.innerHTML = '';
+      setSpeedLimit(50);
     }
 
     btnClearRoute.addEventListener('click', clearRoute);
 
     /* ==========================================================
-       NOMINATIM SEARCH (OPTIONAL QUICK ADDRESS LOOKUP)
+       GEOMETRIC UTILITY: POINT-TO-POLYLINE DISTANCE
+       ========================================================== */
+    function minDistanceToPolyline(pLat, pLon, polyCoords) {
+      let minDist = Infinity;
+      for (let i = 0; i < polyCoords.length - 1; i++) {
+        const [aLat, aLon] = polyCoords[i];
+        const [bLat, bLon] = polyCoords[i + 1];
+        const dist = distToSegment(pLat, pLon, aLat, aLon, bLat, bLon);
+        if (dist < minDist) minDist = dist;
+      }
+      return minDist;
+    }
+
+    function distToSegment(pLat, pLon, aLat, aLon, bLat, bLon) {
+      // Approximate flat coordinate projection in meters for fast distance
+      const x = (pLon - aLon) * Math.cos((aLat + bLat) * Math.PI / 360) * 111320;
+      const y = (pLat - aLat) * 110540;
+      const dx = (bLon - aLon) * Math.cos((aLat + bLat) * Math.PI / 360) * 111320;
+      const dy = (bLat - aLat) * 110540;
+
+      const lenSq = dx * dx + dy * dy;
+      if (lenSq === 0) return Math.sqrt(x * x + y * y);
+
+      let t = (x * dx + y * dy) / lenSq;
+      t = Math.max(0, Math.min(1, t));
+
+      const projX = t * dx;
+      const projY = t * dy;
+      return Math.sqrt((x - projX) * (x - projX) + (y - projY) * (y - projY));
+    }
+
+    function calculateDistance(lat1, lon1, lat2, lon2) {
+      const R = 6371e3;
+      const φ1 = lat1 * Math.PI / 180;
+      const φ2 = lat2 * Math.PI / 180;
+      const Δφ = (lat2 - lat1) * Math.PI / 180;
+      const Δλ = (lon2 - lon1) * Math.PI / 180;
+      const a = Math.sin(Δφ/2) * Math.sin(Δφ/2) +
+                Math.cos(φ1) * Math.cos(φ2) *
+                Math.sin(Δλ/2) * Math.sin(Δλ/2);
+      const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+      return R * c;
+    }
+
+    /* ==========================================================
+       NOMINATIM SEARCH
        ========================================================== */
     let searchDebounce = null;
 
@@ -720,7 +1193,6 @@
         try {
           let viewboxParam = '';
           if (state.userCoords) {
-            // Bias results near user position
             const [lat, lon] = state.userCoords;
             viewboxParam = `&viewbox=${lon-1},${lat+1},${lon+1},${lat-1}`;
           }
@@ -769,7 +1241,7 @@
     }
 
     /* ==========================================================
-       WAKE LOCK API (KEEP SCREEN ON WHILE NAVIGATING)
+       WAKE LOCK API & INTERACTION TRIGGERS
        ========================================================== */
     async function requestWakeLock() {
       if ('wakeLock' in navigator) {
@@ -790,27 +1262,11 @@
       }
     });
 
-    // Request wake lock on first user interaction
+    // Request compass and wake lock on first touch/click
     window.addEventListener('click', () => {
       if (!state.wakeLock) requestWakeLock();
+      initCompassPermission();
     }, { once: true });
-
-    /* ==========================================================
-       UTILITY: HAVERSINE DISTANCE
-       ========================================================== */
-    function calculateDistance(lat1, lon1, lat2, lon2) {
-      const R = 6371e3; // Earth radius in meters
-      const φ1 = lat1 * Math.PI / 180;
-      const φ2 = lat2 * Math.PI / 180;
-      const Δφ = (lat2 - lat1) * Math.PI / 180;
-      const Δλ = (lon2 - lon1) * Math.PI / 180;
-
-      const a = Math.sin(Δφ/2) * Math.sin(Δφ/2) +
-                Math.cos(φ1) * Math.cos(φ2) *
-                Math.sin(Δλ/2) * Math.sin(Δλ/2);
-      const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
-      return R * c; // meters
-    }
 
     /* ==========================================================
        PWA SERVICE WORKER REGISTRATION
@@ -823,7 +1279,7 @@
       });
     }
 
-    // Launch GPS immediately
+    // Start GPS immediately
     initGPS();
   </script>
 </body>
