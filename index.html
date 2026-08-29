@@ -1,0 +1,830 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+  <title>Wake</title>
+
+  <!-- PWA & Mobile Web App Meta -->
+  <meta name="theme-color" content="#007AFF" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="apple-mobile-web-app-title" content="Wake" />
+  <link rel="manifest" href="manifest.json" />
+  <link rel="icon" type="image/png" sizes="32x32" href="icons/favicon.png" />
+  <link rel="icon" type="image/webp" href="icons/icon.webp" />
+  <link rel="apple-touch-icon" sizes="180x180" href="icons/apple-touch-icon.png" />
+  <link rel="shortcut icon" href="favicon.ico" />
+
+  <!-- Leaflet CSS -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="" />
+
+  <style>
+    :root {
+      --primary: #007AFF;
+      --primary-dark: #0056b3;
+      --bg-glass: rgba(255, 255, 255, 0.92);
+      --bg-glass-dark: rgba(28, 28, 30, 0.88);
+      --text-dark: #1c1c1e;
+      --shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
+      --safe-top: env(safe-area-inset-top, 0px);
+      --safe-bottom: env(safe-area-inset-bottom, 0px);
+    }
+
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+      -webkit-tap-highlight-color: transparent;
+      user-select: none;
+      -webkit-user-select: none;
+    }
+
+    html, body {
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+      font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      background-color: #e5e3df;
+    }
+
+    #map {
+      width: 100vw;
+      height: 100vh;
+      position: absolute;
+      top: 0;
+      left: 0;
+      z-index: 1;
+    }
+
+    /* Minimal User Position Marker */
+    .user-position-marker {
+      position: relative;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .user-dot {
+      width: 18px;
+      height: 18px;
+      background-color: #007AFF;
+      border: 3.5px solid #FFFFFF;
+      border-radius: 50%;
+      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.35);
+      z-index: 2;
+    }
+
+    .user-heading {
+      position: absolute;
+      top: -12px;
+      left: 50%;
+      transform: translateX(-50%);
+      width: 0;
+      height: 0;
+      border-left: 6px solid transparent;
+      border-right: 6px solid transparent;
+      border-bottom: 12px solid #007AFF;
+      filter: drop-shadow(0 -1px 2px rgba(0,0,0,0.25));
+      transition: transform 0.2s ease-out;
+      display: none;
+    }
+
+    /* Destination Marker */
+    .dest-dot {
+      width: 20px;
+      height: 20px;
+      background-color: #1C1C1E;
+      border: 3.5px solid #FFFFFF;
+      border-radius: 50%;
+      box-shadow: 0 3px 10px rgba(0, 0, 0, 0.45);
+      position: relative;
+    }
+    .dest-dot::after {
+      content: '';
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      width: 6px;
+      height: 6px;
+      background-color: #FF3B30;
+      border-radius: 50%;
+    }
+
+    /* Top Floating Search & Info Pill */
+    .top-container {
+      position: absolute;
+      top: calc(var(--safe-top) + 12px);
+      left: 12px;
+      right: 12px;
+      z-index: 1000;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      pointer-events: none;
+    }
+
+    .search-box {
+      pointer-events: auto;
+      background: var(--bg-glass);
+      backdrop-filter: blur(20px);
+      -webkit-backdrop-filter: blur(20px);
+      border-radius: 16px;
+      box-shadow: var(--shadow);
+      display: flex;
+      align-items: center;
+      padding: 6px 12px;
+      border: 0.5px solid rgba(255, 255, 255, 0.6);
+      transition: all 0.3s ease;
+    }
+
+    .search-box input {
+      flex: 1;
+      border: none;
+      background: transparent;
+      font-size: 15px;
+      color: var(--text-dark);
+      padding: 6px 8px;
+      outline: none;
+      font-family: inherit;
+    }
+
+    .search-box input::placeholder {
+      color: #8E8E93;
+    }
+
+    .search-icon {
+      color: #8E8E93;
+      width: 18px;
+      height: 18px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    /* Route HUD Info Banner */
+    .route-hud {
+      pointer-events: auto;
+      background: var(--bg-glass-dark);
+      backdrop-filter: blur(25px);
+      -webkit-backdrop-filter: blur(25px);
+      border-radius: 16px;
+      box-shadow: 0 8px 24px rgba(0, 0, 0, 0.25);
+      padding: 12px 16px;
+      display: none;
+      align-items: center;
+      justify-content: space-between;
+      color: #FFFFFF;
+      border: 0.5px solid rgba(255, 255, 255, 0.15);
+      animation: slideDown 0.3s ease;
+    }
+
+    .route-hud.active {
+      display: flex;
+    }
+
+    @keyframes slideDown {
+      from { opacity: 0; transform: translateY(-10px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    .hud-metrics {
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+    }
+
+    .hud-primary {
+      font-size: 19px;
+      font-weight: 700;
+      letter-spacing: -0.5px;
+      display: flex;
+      align-items: baseline;
+      gap: 6px;
+    }
+
+    .hud-time {
+      color: #30D158;
+    }
+
+    .hud-dist {
+      font-size: 14px;
+      font-weight: 500;
+      color: #EBEBF599;
+    }
+
+    .btn-clear-route {
+      background: rgba(255, 255, 255, 0.15);
+      border: none;
+      color: #FFFFFF;
+      width: 32px;
+      height: 32px;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      font-size: 16px;
+      font-weight: 600;
+      transition: background 0.2s;
+    }
+
+    .btn-clear-route:active {
+      background: rgba(255, 255, 255, 0.3);
+    }
+
+    /* Floating Action Buttons (Bottom Right) */
+    .fab-group {
+      position: absolute;
+      bottom: calc(var(--safe-bottom) + 24px);
+      right: 16px;
+      z-index: 1000;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+
+    .fab {
+      width: 48px;
+      height: 48px;
+      background: var(--bg-glass);
+      backdrop-filter: blur(20px);
+      -webkit-backdrop-filter: blur(20px);
+      border-radius: 50%;
+      box-shadow: var(--shadow);
+      border: 0.5px solid rgba(255, 255, 255, 0.7);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: #1C1C1E;
+      cursor: pointer;
+      transition: transform 0.15s ease, background 0.2s ease, color 0.2s ease;
+    }
+
+    .fab:active {
+      transform: scale(0.92);
+    }
+
+    .fab.active {
+      background: var(--primary);
+      color: #FFFFFF;
+      border-color: var(--primary);
+    }
+
+    .fab svg {
+      width: 22px;
+      height: 22px;
+      fill: currentColor;
+    }
+
+    /* Toast Notification */
+    .toast {
+      position: absolute;
+      bottom: calc(var(--safe-bottom) + 80px);
+      left: 50%;
+      transform: translateX(-50%) translateY(20px);
+      background: rgba(28, 28, 30, 0.92);
+      backdrop-filter: blur(15px);
+      -webkit-backdrop-filter: blur(15px);
+      color: #FFFFFF;
+      padding: 10px 18px;
+      border-radius: 20px;
+      font-size: 13px;
+      font-weight: 500;
+      z-index: 2000;
+      opacity: 0;
+      pointer-events: none;
+      transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+      box-shadow: 0 4px 15px rgba(0,0,0,0.25);
+      white-space: nowrap;
+    }
+
+    .toast.show {
+      opacity: 1;
+      transform: translateX(-50%) translateY(0);
+    }
+
+    /* Search Autocomplete Results */
+    .search-results {
+      pointer-events: auto;
+      background: var(--bg-glass);
+      backdrop-filter: blur(20px);
+      -webkit-backdrop-filter: blur(20px);
+      border-radius: 14px;
+      box-shadow: var(--shadow);
+      margin-top: 4px;
+      max-height: 220px;
+      overflow-y: auto;
+      display: none;
+      border: 0.5px solid rgba(255, 255, 255, 0.6);
+    }
+
+    .search-results.active {
+      display: block;
+    }
+
+    .search-item {
+      padding: 12px 14px;
+      font-size: 14px;
+      color: var(--text-dark);
+      border-bottom: 0.5px solid rgba(0, 0, 0, 0.06);
+      cursor: pointer;
+      line-height: 1.3;
+    }
+
+    .search-item:last-child {
+      border-bottom: none;
+    }
+
+    .search-item:active {
+      background: rgba(0, 122, 255, 0.1);
+    }
+
+    /* Leaflet Attribution styling override for minimalist look */
+    .leaflet-control-attribution {
+      font-size: 9px !important;
+      background: rgba(255, 255, 255, 0.6) !important;
+      backdrop-filter: blur(5px);
+      padding: 2px 6px !important;
+      margin: 0 !important;
+      border-top-left-radius: 6px;
+    }
+  </style>
+</head>
+<body>
+
+  <!-- Fullscreen Map -->
+  <div id="map"></div>
+
+  <!-- Top Search & HUD Area -->
+  <div class="top-container">
+    <!-- Clean Search Bar -->
+    <div class="search-box" id="searchBox">
+      <div class="search-icon">
+        <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="11" cy="11" r="8"></circle>
+          <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+        </svg>
+      </div>
+      <input type="text" id="searchInput" placeholder="Rechercher ou toucher la carte..." autocomplete="off" />
+    </div>
+
+    <!-- Search Results Dropdown -->
+    <div class="search-results" id="searchResults"></div>
+
+    <!-- Route Status HUD -->
+    <div class="route-hud" id="routeHud">
+      <div class="hud-metrics">
+        <div class="hud-primary">
+          <span class="hud-time" id="hudTime">-- min</span>
+          <span class="hud-dist" id="hudDist">-- km</span>
+        </div>
+      </div>
+      <button class="btn-clear-route" id="btnClearRoute" title="Annuler l'itinéraire">✕</button>
+    </div>
+  </div>
+
+  <!-- Bottom-Right Floating Controls -->
+  <div class="fab-group">
+    <!-- Recenter / Auto-follow button -->
+    <button class="fab active" id="btnRecenter" title="Recentrer">
+      <svg viewBox="0 0 24 24">
+        <path d="M12 8c-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4-1.79-4-4-4zm8.94 3A8.994 8.994 0 0 0 13 3.06V1h-2v2.06A8.994 8.994 0 0 0 3.06 11H1v2h2.06A8.994 8.994 0 0 0 11 20.94V23h2v-2.06A8.994 8.994 0 0 0 20.94 13H23v-2h-2.06zM12 19c-3.87 0-7-3.13-7-7s3.13-7 7-7 7 3.13 7 7-3.13 7-7 7z"/>
+      </svg>
+    </button>
+  </div>
+
+  <!-- Toast Notification -->
+  <div class="toast" id="toast"></div>
+
+  <!-- Leaflet JS -->
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+
+  <script>
+    /* ==========================================================
+       APPLICATION STATE & CONFIG
+       ========================================================== */
+    const state = {
+      userCoords: null,       // [lat, lon]
+      userAccuracy: null,     // meters
+      userHeading: null,      // degrees
+      destination: null,      // [lat, lon]
+      isAutoFollow: true,     // Center on user position updates
+      activeRoute: null,      // OSRM GeoJSON / polyline data
+      wakeLock: null,
+      watchId: null
+    };
+
+    /* ==========================================================
+       MAP INITIALIZATION
+       ========================================================== */
+    // Default fallback position (Paris)
+    const map = L.map('map', {
+      zoomControl: false,
+      attributionControl: true
+    }).setView([48.8566, 2.3522], 15);
+
+    // High quality OpenStreetMap tiles
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      maxZoom: 19,
+      attribution: '© OpenStreetMap'
+    }).addTo(map);
+
+    /* ==========================================================
+       CUSTOM MARKERS & LAYERS
+       ========================================================== */
+    // User Location Marker (Clean Blue Dot with Crisp White Border)
+    const userMarkerIcon = L.divIcon({
+      className: 'user-position-marker',
+      html: `
+        <div class="user-heading" id="userHeadingArrow"></div>
+        <div class="user-dot"></div>
+      `,
+      iconSize: [24, 24],
+      iconAnchor: [12, 12]
+    });
+
+    let userMarker = null;
+    let userAccuracyCircle = null;
+    let destMarker = null;
+    let routeBorderLayer = null;
+    let routeLineLayer = null;
+
+    const destMarkerIcon = L.divIcon({
+      className: 'dest-marker',
+      html: '<div class="dest-dot"></div>',
+      iconSize: [24, 24],
+      iconAnchor: [12, 12]
+    });
+
+    /* ==========================================================
+       UI ELEMENTS
+       ========================================================== */
+    const routeHud = document.getElementById('routeHud');
+    const hudTime = document.getElementById('hudTime');
+    const hudDist = document.getElementById('hudDist');
+    const btnClearRoute = document.getElementById('btnClearRoute');
+    const btnRecenter = document.getElementById('btnRecenter');
+    const searchInput = document.getElementById('searchInput');
+    const searchResults = document.getElementById('searchResults');
+    const toast = document.getElementById('toast');
+
+    function showToast(message, duration = 3000) {
+      toast.textContent = message;
+      toast.classList.add('show');
+      setTimeout(() => toast.classList.remove('show'), duration);
+    }
+
+    /* ==========================================================
+       GPS TRACKING (GEOLOCATION API)
+       ========================================================== */
+    function initGPS() {
+      if (!('geolocation' in navigator)) {
+        showToast('Géolocalisation non supportée par votre navigateur');
+        return;
+      }
+
+      const geoOptions = {
+        enableHighAccuracy: true,
+        maximumAge: 0,
+        timeout: 10000
+      };
+
+      state.watchId = navigator.geolocation.watchPosition(
+        onLocationSuccess,
+        onLocationError,
+        geoOptions
+      );
+    }
+
+    function onLocationSuccess(pos) {
+      const { latitude, longitude, accuracy, heading } = pos.coords;
+      const prevCoords = state.userCoords;
+      state.userCoords = [latitude, longitude];
+      state.userAccuracy = accuracy;
+      state.userHeading = heading;
+
+      // Create or update user position marker
+      if (!userMarker) {
+        userMarker = L.marker([latitude, longitude], {
+          icon: userMarkerIcon,
+          zIndexOffset: 1000
+        }).addTo(map);
+
+        userAccuracyCircle = L.circle([latitude, longitude], {
+          radius: accuracy || 10,
+          color: '#007AFF',
+          weight: 1,
+          opacity: 0.25,
+          fillColor: '#007AFF',
+          fillOpacity: 0.08
+        }).addTo(map);
+
+        map.setView([latitude, longitude], 16);
+      } else {
+        userMarker.setLatLng([latitude, longitude]);
+        if (userAccuracyCircle) {
+          userAccuracyCircle.setLatLng([latitude, longitude]);
+          userAccuracyCircle.setRadius(accuracy || 10);
+        }
+      }
+
+      // Orientation arrow update if available
+      const headingEl = document.getElementById('userHeadingArrow');
+      if (headingEl && heading !== null && !isNaN(heading)) {
+        headingEl.style.display = 'block';
+        headingEl.style.transform = `translateX(-50%) rotate(${heading}deg)`;
+      }
+
+      // Auto-follow center
+      if (state.isAutoFollow) {
+        map.panTo([latitude, longitude], { animate: true, duration: 0.5 });
+      }
+
+      // If active destination and user moved significantly, recalculate route
+      if (state.destination && prevCoords) {
+        const distMoved = calculateDistance(prevCoords[0], prevCoords[1], latitude, longitude);
+        if (distMoved > 25) { // 25 meters threshold
+          calculateRoute(state.destination, false);
+        }
+      }
+    }
+
+    function onLocationError(err) {
+      console.warn('Geolocation error:', err.message);
+      if (err.code === 1) {
+        showToast('Activez la localisation pour le suivi GPS');
+      } else {
+        showToast('Signal GPS faible...');
+      }
+    }
+
+    /* ==========================================================
+       USER INTERACTIONS & AUTO-FOLLOW
+       ========================================================== */
+    map.on('dragstart', () => {
+      state.isAutoFollow = false;
+      btnRecenter.classList.remove('active');
+    });
+
+    btnRecenter.addEventListener('click', () => {
+      state.isAutoFollow = true;
+      btnRecenter.classList.add('active');
+      if (state.userCoords) {
+        map.setView(state.userCoords, Math.max(map.getZoom(), 16), { animate: true });
+      } else {
+        showToast('Recherche de votre position GPS...');
+      }
+    });
+
+    // Map tap/click to set destination
+    map.on('click', (e) => {
+      setDestination([e.latlng.lat, e.latlng.lng]);
+    });
+
+    function setDestination(latlng) {
+      state.destination = latlng;
+
+      // Update destination marker
+      if (destMarker) {
+        destMarker.setLatLng(latlng);
+      } else {
+        destMarker = L.marker(latlng, { icon: destMarkerIcon, zIndexOffset: 900 }).addTo(map);
+      }
+
+      if (!state.userCoords) {
+        showToast('En attente du signal GPS pour tracer la route...');
+        return;
+      }
+
+      calculateRoute(latlng, true);
+    }
+
+    /* ==========================================================
+       OSRM ROUTING
+       ========================================================== */
+    async function calculateRoute(destCoords, fitBounds = true) {
+      if (!state.userCoords) return;
+
+      const [startLat, startLon] = state.userCoords;
+      const [destLat, destLon] = destCoords;
+
+      const url = `https://router.project-osrm.org/route/v1/driving/${startLon},${startLat};${destLon},${destLat}?overview=full&geometries=geojson`;
+
+      try {
+        const response = await fetch(url);
+        const data = await response.json();
+
+        if (data.code !== 'Ok' || !data.routes || !data.routes.length) {
+          showToast('Itinéraire introuvable');
+          return;
+        }
+
+        const route = data.routes[0];
+        state.activeRoute = route;
+
+        // Coordinates GeoJSON: [lon, lat] -> Leaflet expects [lat, lon]
+        const latlngs = route.geometry.coordinates.map(coord => [coord[1], coord[0]]);
+
+        // Clear existing route layers
+        if (routeBorderLayer) map.removeLayer(routeBorderLayer);
+        if (routeLineLayer) map.removeLayer(routeLineLayer);
+
+        // Outer contrast casing (makes route pop against all map features)
+        routeBorderLayer = L.polyline(latlngs, {
+          color: '#FFFFFF',
+          weight: 9,
+          opacity: 0.95,
+          lineJoin: 'round',
+          lineCap: 'round'
+        }).addTo(map);
+
+        // Distinct thick blue route line
+        routeLineLayer = L.polyline(latlngs, {
+          color: '#0066FF',
+          weight: 6,
+          opacity: 1,
+          lineJoin: 'round',
+          lineCap: 'round'
+        }).addTo(map);
+
+        // Update HUD
+        const distanceKm = (route.distance / 1000).toFixed(route.distance < 10000 ? 1 : 0);
+        const durationMin = Math.round(route.duration / 60);
+
+        hudDist.textContent = `${distanceKm} km`;
+        if (durationMin >= 60) {
+          const h = Math.floor(durationMin / 60);
+          const m = durationMin % 60;
+          hudTime.textContent = `${h} h ${m.toString().padStart(2, '0')} min`;
+        } else {
+          hudTime.textContent = `${durationMin} min`;
+        }
+
+        routeHud.classList.add('active');
+
+        if (fitBounds) {
+          const bounds = L.latLngBounds(latlngs);
+          map.fitBounds(bounds, { padding: [80, 50], maxZoom: 17 });
+          state.isAutoFollow = false;
+          btnRecenter.classList.remove('active');
+        }
+      } catch (err) {
+        console.error('OSRM fetch error:', err);
+        showToast('Erreur lors du calcul de route');
+      }
+    }
+
+    function clearRoute() {
+      state.destination = null;
+      state.activeRoute = null;
+
+      if (destMarker) {
+        map.removeLayer(destMarker);
+        destMarker = null;
+      }
+      if (routeBorderLayer) {
+        map.removeLayer(routeBorderLayer);
+        routeBorderLayer = null;
+      }
+      if (routeLineLayer) {
+        map.removeLayer(routeLineLayer);
+        routeLineLayer = null;
+      }
+
+      routeHud.classList.remove('active');
+      searchInput.value = '';
+      searchResults.classList.remove('active');
+      searchResults.innerHTML = '';
+    }
+
+    btnClearRoute.addEventListener('click', clearRoute);
+
+    /* ==========================================================
+       NOMINATIM SEARCH (OPTIONAL QUICK ADDRESS LOOKUP)
+       ========================================================== */
+    let searchDebounce = null;
+
+    searchInput.addEventListener('input', (e) => {
+      const q = e.target.value.trim();
+      clearTimeout(searchDebounce);
+
+      if (q.length < 3) {
+        searchResults.classList.remove('active');
+        searchResults.innerHTML = '';
+        return;
+      }
+
+      searchDebounce = setTimeout(async () => {
+        try {
+          let viewboxParam = '';
+          if (state.userCoords) {
+            // Bias results near user position
+            const [lat, lon] = state.userCoords;
+            viewboxParam = `&viewbox=${lon-1},${lat+1},${lon+1},${lat-1}`;
+          }
+
+          const res = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(q)}${viewboxParam}&limit=4&addressdetails=1`);
+          const places = await res.json();
+
+          if (!places.length) {
+            searchResults.innerHTML = '<div class="search-item" style="color:#8E8E93;">Aucun résultat trouvé</div>';
+            searchResults.classList.add('active');
+            return;
+          }
+
+          searchResults.innerHTML = places.map(p => `
+            <div class="search-item" data-lat="${p.lat}" data-lon="${p.lon}">
+              <strong>${escapeHtml(p.name || p.display_name.split(',')[0])}</strong><br/>
+              <span style="font-size:12px; color:#8E8E93;">${escapeHtml(p.display_name)}</span>
+            </div>
+          `).join('');
+
+          searchResults.classList.add('active');
+        } catch (err) {
+          console.error('Search error:', err);
+        }
+      }, 350);
+    });
+
+    searchResults.addEventListener('click', (e) => {
+      const item = e.target.closest('.search-item');
+      if (!item || !item.dataset.lat) return;
+
+      const lat = parseFloat(item.dataset.lat);
+      const lon = parseFloat(item.dataset.lon);
+
+      searchInput.value = item.querySelector('strong').textContent;
+      searchResults.classList.remove('active');
+      searchResults.innerHTML = '';
+
+      setDestination([lat, lon]);
+    });
+
+    function escapeHtml(text) {
+      const div = document.createElement('div');
+      div.textContent = text;
+      return div.innerHTML;
+    }
+
+    /* ==========================================================
+       WAKE LOCK API (KEEP SCREEN ON WHILE NAVIGATING)
+       ========================================================== */
+    async function requestWakeLock() {
+      if ('wakeLock' in navigator) {
+        try {
+          state.wakeLock = await navigator.wakeLock.request('screen');
+          state.wakeLock.addEventListener('release', () => {
+            state.wakeLock = null;
+          });
+        } catch (err) {
+          console.warn('Wake Lock error:', err.message);
+        }
+      }
+    }
+
+    document.addEventListener('visibilitychange', async () => {
+      if (document.visibilityState === 'visible') {
+        await requestWakeLock();
+      }
+    });
+
+    // Request wake lock on first user interaction
+    window.addEventListener('click', () => {
+      if (!state.wakeLock) requestWakeLock();
+    }, { once: true });
+
+    /* ==========================================================
+       UTILITY: HAVERSINE DISTANCE
+       ========================================================== */
+    function calculateDistance(lat1, lon1, lat2, lon2) {
+      const R = 6371e3; // Earth radius in meters
+      const φ1 = lat1 * Math.PI / 180;
+      const φ2 = lat2 * Math.PI / 180;
+      const Δφ = (lat2 - lat1) * Math.PI / 180;
+      const Δλ = (lon2 - lon1) * Math.PI / 180;
+
+      const a = Math.sin(Δφ/2) * Math.sin(Δφ/2) +
+                Math.cos(φ1) * Math.cos(φ2) *
+                Math.sin(Δλ/2) * Math.sin(Δλ/2);
+      const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+      return R * c; // meters
+    }
+
+    /* ==========================================================
+       PWA SERVICE WORKER REGISTRATION
+       ========================================================== */
+    if ('serviceWorker' in navigator) {
+      window.addEventListener('load', () => {
+        navigator.serviceWorker.register('./sw.js')
+          .then((reg) => console.log('ServiceWorker registered:', reg.scope))
+          .catch((err) => console.warn('ServiceWorker registration failed:', err));
+      });
+    }
+
+    // Launch GPS immediately
+    initGPS();
+  </script>
+</body>
+</html>
