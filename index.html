@@ -758,6 +758,7 @@
       is3DMode: false,          // 3D perspective camera mode
       searchMode: 'address',    // 'address' or 'poi'
       transportMode: 'driving', // 'driving', 'cycling', 'walking'
+      speedHistory: [],         // Rolling 5s timestamped speed history
       activeRoute: null,        // OSRM route object
       routeCoordinates: [],     // Array of [lon, lat] for MapLibre GeoJSON
       routeRadars: [],          // Speed cameras on route
@@ -981,8 +982,26 @@
     }
 
     /* ==========================================================
-       SPEEDOMETER & SPEED LIMIT LOGIC
+       SPEEDOMETER & ROLLING AVERAGE (5-SECOND SMOOTHING)
        ========================================================== */
+    function getSmoothedSpeed(rawSpeedKmh, now = Date.now()) {
+      state.speedHistory.push({ time: now, speed: rawSpeedKmh });
+      // Filter out records older than 5 seconds
+      state.speedHistory = state.speedHistory.filter(entry => now - entry.time <= 5000);
+
+      // Fast-stop detection: consecutive stationary readings reset immediately
+      if (rawSpeedKmh === 0 && state.speedHistory.length >= 2) {
+        const lastTwoZeros = state.speedHistory.slice(-2).every(e => e.speed === 0);
+        if (lastTwoZeros) {
+          state.speedHistory = [{ time: now, speed: 0 }];
+          return 0;
+        }
+      }
+
+      const sum = state.speedHistory.reduce((acc, entry) => acc + entry.speed, 0);
+      return Math.round(sum / state.speedHistory.length);
+    }
+
     function updateSpeed(newSpeedKmh) {
       state.currentSpeedKmh = Math.max(0, Math.round(newSpeedKmh));
       speedValEl.textContent = state.currentSpeedKmh;
@@ -1076,42 +1095,61 @@
       const now = Date.now();
       const prevCoords = state.userCoords;
 
-      state.userCoords = [latitude, longitude];
-      state.userAccuracy = accuracy;
+      // 1. Anti-Jitter Filter (< 3 meters is considered micro-movement / drift)
+      const distMoved = prevCoords ? calculateDistance(prevCoords[0], prevCoords[1], latitude, longitude) : 999;
+      const isJitter = prevCoords && distMoved < 3;
 
-      // Speed calculation
-      let calculatedSpeedKmh = 0;
-      if (speed !== null && !isNaN(speed) && speed >= 0) {
-        calculatedSpeedKmh = speed * 3.6;
-      } else if (prevCoords && state.lastPosTime) {
-        const dt = (now - state.lastPosTime) / 1000;
-        if (dt > 0.5 && dt < 10) {
-          const dMeters = calculateDistance(prevCoords[0], prevCoords[1], latitude, longitude);
-          calculatedSpeedKmh = (dMeters / dt) * 3.6;
+      let effectiveLat = latitude;
+      let effectiveLon = longitude;
+
+      if (isJitter) {
+        // Micro-drift (< 1.5m): lock to previous coordinates to prevent visual map jitter
+        if (distMoved < 1.5) {
+          effectiveLat = prevCoords[0];
+          effectiveLon = prevCoords[1];
         }
       }
-      state.lastPosTime = now;
-      updateSpeed(calculatedSpeedKmh);
 
-      // Heading calculation
-      if (heading !== null && !isNaN(heading) && calculatedSpeedKmh >= 5) {
+      state.userCoords = [effectiveLat, effectiveLon];
+      state.userAccuracy = accuracy;
+
+      // 2. Instantaneous Speed calculation (0 if jittering / stationary)
+      let rawSpeedKmh = 0;
+      if (!isJitter) {
+        if (speed !== null && !isNaN(speed) && speed >= 0) {
+          rawSpeedKmh = speed * 3.6;
+        } else if (prevCoords && state.lastPosTime) {
+          const dt = (now - state.lastPosTime) / 1000;
+          if (dt > 0.4 && dt < 10) {
+            rawSpeedKmh = (distMoved / dt) * 3.6;
+          }
+        }
+      }
+
+      // 3. 5-Second Rolling Average for Speed & Live ETA
+      const smoothedSpeedKmh = getSmoothedSpeed(rawSpeedKmh, now);
+      state.lastPosTime = now;
+      updateSpeed(smoothedSpeedKmh);
+
+      // 4. Heading calculation (only when moving >= 4 km/h without jitter to prevent spinning)
+      if (heading !== null && !isNaN(heading) && smoothedSpeedKmh >= 4 && !isJitter) {
         state.userHeading = heading;
         updateHeadingDisplay(heading);
       } else if (state.compassHeading !== null) {
         updateHeadingDisplay(state.compassHeading);
       }
 
-      // Update User Marker position
-      userMarker.setLngLat([longitude, latitude]).addTo(map);
+      // 5. Update User Marker position
+      userMarker.setLngLat([effectiveLon, effectiveLat]).addTo(map);
 
-      // Auto-follow Camera
+      // 6. Auto-follow Camera
       if (state.isAutoFollow) {
         updateCameraPosition(false);
       }
 
-      // Dynamic Route Recalculation & Live ETA (no unnecessary heavy server calls)
+      // 7. Dynamic Route Recalculation & Live ETA (no unnecessary heavy server calls)
       if (state.destination && prevCoords && state.routeCoordinates.length > 1) {
-        const offRouteDist = minDistanceToRoute(latitude, longitude, state.routeCoordinates);
+        const offRouteDist = minDistanceToRoute(effectiveLat, effectiveLon, state.routeCoordinates);
         if (offRouteDist > 65) {
           calculateRoute(state.destination, false);
         } else {
@@ -1119,7 +1157,7 @@
         }
       }
 
-      checkUpcomingRadars(latitude, longitude);
+      checkUpcomingRadars(effectiveLat, effectiveLon);
     }
 
     function onLocationError(err) {
