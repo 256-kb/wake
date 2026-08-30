@@ -1002,11 +1002,20 @@
       return Math.round(sum / state.speedHistory.length);
     }
 
+    function updateSpeedLimitVisibility() {
+      if (state.transportMode === 'driving') {
+        speedLimitSignEl.style.display = 'flex';
+      } else {
+        speedLimitSignEl.style.display = 'none';
+        speedLimitSignEl.classList.remove('overspeed');
+      }
+    }
+
     function updateSpeed(newSpeedKmh) {
       state.currentSpeedKmh = Math.max(0, Math.round(newSpeedKmh));
       speedValEl.textContent = state.currentSpeedKmh;
 
-      if (state.currentSpeedKmh > state.speedLimitKmh) {
+      if (state.transportMode === 'driving' && state.currentSpeedKmh > state.speedLimitKmh) {
         speedLimitSignEl.classList.add('overspeed');
       } else {
         speedLimitSignEl.classList.remove('overspeed');
@@ -1018,6 +1027,7 @@
         state.speedLimitKmh = parseInt(limit, 10);
         speedLimitValEl.textContent = state.speedLimitKmh;
       }
+      updateSpeedLimitVisibility();
       updateSpeed(state.currentSpeedKmh);
     }
 
@@ -1238,6 +1248,7 @@
 
         state.transportMode = mode;
         transportButtons.forEach(b => b.classList.toggle('active', b.dataset.mode === mode));
+        updateSpeedLimitVisibility();
 
         const modeLabels = { driving: 'Voiture', cycling: 'Vélo', walking: 'Piéton' };
         showToast(`Mode ${modeLabels[mode] || mode}`);
@@ -1365,12 +1376,8 @@
     }
 
     function inferSpeedLimitFromRoute(route) {
-      if (state.transportMode === 'cycling') {
-        setSpeedLimit(25);
-        return;
-      }
-      if (state.transportMode === 'walking') {
-        setSpeedLimit(6);
+      if (state.transportMode !== 'driving') {
+        updateSpeedLimitVisibility();
         return;
       }
 
@@ -1388,6 +1395,8 @@
         } else {
           setSpeedLimit(50);
         }
+      } else {
+        setSpeedLimit(50);
       }
     }
 
