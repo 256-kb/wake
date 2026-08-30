@@ -272,6 +272,70 @@
       color: #EBEBF599;
     }
 
+    .hud-eta-row {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 12px;
+      color: #EBEBF599;
+    }
+
+    .hud-traffic-badge {
+      display: none;
+      background: rgba(255, 149, 0, 0.25);
+      color: #FF9F0A;
+      font-size: 10px;
+      font-weight: 700;
+      padding: 1px 6px;
+      border-radius: 6px;
+      border: 0.5px solid rgba(255, 149, 0, 0.5);
+    }
+
+    .hud-traffic-badge.active {
+      display: inline-flex;
+      align-items: center;
+    }
+
+    /* iOS Segmented Transport Switch */
+    .transport-switch {
+      display: flex;
+      background: rgba(255, 255, 255, 0.12);
+      border-radius: 12px;
+      padding: 3px;
+      gap: 3px;
+      align-items: center;
+    }
+
+    .transport-btn {
+      border: none;
+      background: transparent;
+      color: rgba(255, 255, 255, 0.6);
+      width: 36px;
+      height: 32px;
+      border-radius: 9px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      transition: all 0.25s cubic-bezier(0.2, 0, 0, 1);
+    }
+
+    .transport-btn:active {
+      transform: scale(0.92);
+    }
+
+    .transport-btn.active {
+      background: #FFFFFF;
+      color: var(--primary);
+      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.25);
+    }
+
+    .transport-btn svg {
+      width: 18px;
+      height: 18px;
+      fill: currentColor;
+    }
+
     .hud-radar-alert {
       display: none;
       align-items: center;
@@ -596,10 +660,15 @@
 
     <!-- Route Status HUD -->
     <div class="route-hud" id="routeHud">
+      <!-- Left Metrics & Traffic info -->
       <div class="hud-metrics">
         <div class="hud-primary">
           <span class="hud-time" id="hudTime">-- min</span>
           <span class="hud-dist" id="hudDist">-- km</span>
+        </div>
+        <div class="hud-eta-row">
+          <span class="hud-eta" id="hudEta">Arrivée --:--</span>
+          <span class="hud-traffic-badge" id="hudTrafficBadge">⚡ Heure de pointe +25%</span>
         </div>
         <div class="hud-radar-alert" id="hudRadarAlert">
           <svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor">
@@ -608,6 +677,27 @@
           <span id="hudRadarText">Radar à 400m</span>
         </div>
       </div>
+
+      <!-- Middle: iOS Transport Switch (Voiture, Vélo, Piéton) -->
+      <div class="transport-switch" id="transportSwitch">
+        <button class="transport-btn active" data-mode="driving" title="Voiture">
+          <svg viewBox="0 0 24 24">
+            <path d="M18.92 6.01C18.72 5.42 18.16 5 17.5 5h-11c-.66 0-1.21.42-1.42 1.01L3 12v8c0 .55.45 1 1 1h1c.55 0 1-.45 1-1v-1h12v1c0 .55.45 1 1 1h1c.55 0 1-.45 1-1v-8l-2.08-5.99zM6.5 16c-.83 0-1.5-.67-1.5-1.5S5.67 13 6.5 13s1.5.67 1.5 1.5S7.33 16 6.5 16zm11 0c-.83 0-1.5-.67-1.5-1.5s.67-1.5 1.5-1.5 1.5.67 1.5 1.5-.67 1.5-1.5 1.5zM5 11l1.5-4.5h11L19 11H5z"/>
+          </svg>
+        </button>
+        <button class="transport-btn" data-mode="cycling" title="Vélo">
+          <svg viewBox="0 0 24 24">
+            <path d="M15.5 5.5c1.1 0 2-.9 2-2s-.9-2-2-2-2 .9-2 2 .9 2 2 2zM5 12c-2.8 0-5 2.2-5 5s2.2 5 5 5 5-2.2 5-5-2.2-5-5-5zm0 8.5c-1.9 0-3.5-1.6-3.5-3.5s1.6-3.5 3.5-3.5 3.5 1.6 3.5 3.5-1.6 3.5-3.5 3.5zm5.8-10l2.4-2.4.8.8c1.3 1.3 3 2.1 5 2.1V9c-1.5 0-2.9-.6-3.9-1.6l-1.8-1.8c-.4-.4-.9-.6-1.5-.6-.6 0-1.1.2-1.5.6L7.4 8.4c-.4.4-.6.9-.6 1.6 0 .6.2 1.1.6 1.5l3.4 3.5V20h2v-5.9l-2-2.1zM19 12c-2.8 0-5 2.2-5 5s2.2 5 5 5 5-2.2 5-5-2.2-5-5-5zm0 8.5c-1.9 0-3.5-1.6-3.5-3.5s1.6-3.5 3.5-3.5 3.5 1.6 3.5 3.5-1.6 3.5-3.5 3.5z"/>
+          </svg>
+        </button>
+        <button class="transport-btn" data-mode="walking" title="Piéton">
+          <svg viewBox="0 0 24 24">
+            <path d="M13.5 5.5c1.1 0 2-.9 2-2s-.9-2-2-2-2 .9-2 2 .9 2 2 2zM9.8 8.9L7 23h2.1l1.8-8 2.1 2v6h2v-7.5l-2.1-2 .6-3C14.8 12 16.8 13 19 13v-2c-1.9 0-3.5-1-4.3-2.4l-1-1.6c-.4-.6-1-1-1.7-1-.3 0-.5.1-.8.1L6 8.3V13h2V9.6l1.8-.7z"/>
+          </svg>
+        </button>
+      </div>
+
+      <!-- Right: Close Route -->
       <button class="btn-clear-route" id="btnClearRoute" title="Annuler l'itinéraire">✕</button>
     </div>
   </div>
@@ -659,6 +749,7 @@
       isAutoFollow: true,       // auto-follow user position
       is3DMode: false,          // 3D perspective camera mode
       searchMode: 'address',    // 'address' or 'poi'
+      transportMode: 'driving', // 'driving', 'cycling', 'walking'
       activeRoute: null,        // OSRM route object
       routeCoordinates: [],     // Array of [lon, lat] for MapLibre GeoJSON
       routeRadars: [],          // Speed cameras on route
@@ -821,8 +912,11 @@
     const routeHud = document.getElementById('routeHud');
     const hudTime = document.getElementById('hudTime');
     const hudDist = document.getElementById('hudDist');
+    const hudEta = document.getElementById('hudEta');
+    const hudTrafficBadge = document.getElementById('hudTrafficBadge');
     const hudRadarAlert = document.getElementById('hudRadarAlert');
     const hudRadarText = document.getElementById('hudRadarText');
+    const transportButtons = document.querySelectorAll('.transport-btn');
     const btnClearRoute = document.getElementById('btnClearRoute');
     const btnRecenter = document.getElementById('btnRecenter');
     const btn3D = document.getElementById('btn3D');
@@ -1076,15 +1170,44 @@
     }
 
     /* ==========================================================
-       OSRM ROUTING & MAPLIBRE GEOJSON
+       OSRM ROUTING, TRANSPORT MODES & PEAK HOUR TRAFFIC
        ========================================================== */
+    function isPeakHour() {
+      const now = new Date();
+      const day = now.getDay(); // 0 is Sunday, 1-5 Mon-Fri, 6 Sat
+      const hour = now.getHours();
+      const isWeekday = day >= 1 && day <= 5;
+      const isPeak = (hour >= 7 && hour < 9) || (hour >= 17 && hour < 19);
+      return isWeekday && isPeak;
+    }
+
+    // Transport Mode Buttons Click Listeners
+    transportButtons.forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const mode = btn.dataset.mode;
+        if (state.transportMode === mode) return;
+
+        state.transportMode = mode;
+        transportButtons.forEach(b => b.classList.toggle('active', b.dataset.mode === mode));
+
+        const modeLabels = { driving: 'Voiture', cycling: 'Vélo', walking: 'Piéton' };
+        showToast(`Mode ${modeLabels[mode] || mode}`);
+
+        if (state.destination) {
+          calculateRoute(state.destination, false);
+        }
+      });
+    });
+
     async function calculateRoute(destCoords, fitBounds = true) {
       if (!state.userCoords) return;
 
       const [startLat, startLon] = state.userCoords;
       const [destLat, destLon] = destCoords;
+      const profile = state.transportMode || 'driving';
 
-      const url = `https://router.project-osrm.org/route/v1/driving/${startLon},${startLat};${destLon},${destLat}?overview=full&geometries=geojson&steps=true`;
+      const url = `https://router.project-osrm.org/route/v1/${profile}/${startLon},${startLat};${destLon},${destLat}?overview=full&geometries=geojson&steps=true`;
 
       try {
         const response = await fetch(url);
@@ -1112,9 +1235,19 @@
           });
         }
 
-        // Update HUD
+        // Peak hour adjustment (+25% during Monday-Friday 7h-9h & 17h-19h in driving mode)
+        let effectiveDurationSec = route.duration;
+        const isPeak = profile === 'driving' && isPeakHour();
+        if (isPeak) {
+          effectiveDurationSec *= 1.25;
+          hudTrafficBadge.classList.add('active');
+        } else {
+          hudTrafficBadge.classList.remove('active');
+        }
+
+        // Update HUD Metrics
         const distanceKm = (route.distance / 1000).toFixed(route.distance < 10000 ? 1 : 0);
-        const durationMin = Math.round(route.duration / 60);
+        const durationMin = Math.max(1, Math.round(effectiveDurationSec / 60));
 
         hudDist.textContent = `${distanceKm} km`;
         if (durationMin >= 60) {
@@ -1124,6 +1257,12 @@
         } else {
           hudTime.textContent = `${durationMin} min`;
         }
+
+        // ETA calculation
+        const etaDate = new Date(Date.now() + effectiveDurationSec * 1000);
+        const etaH = etaDate.getHours().toString().padStart(2, '0');
+        const etaM = etaDate.getMinutes().toString().padStart(2, '0');
+        hudEta.textContent = `Arrivée ${etaH}:${etaM}`;
 
         routeHud.classList.add('active');
 
@@ -1135,8 +1274,12 @@
           btnRecenter.classList.remove('active');
         }
 
-        // Fetch & display speed cameras along route
-        fetchSpeedCamerasOnRoute(state.routeCoordinates);
+        // Fetch speed cameras only when driving
+        if (profile === 'driving') {
+          fetchSpeedCamerasOnRoute(state.routeCoordinates);
+        } else {
+          clearSpeedCameras();
+        }
 
       } catch (err) {
         console.error('OSRM error:', err);
@@ -1145,6 +1288,15 @@
     }
 
     function inferSpeedLimitFromRoute(route) {
+      if (state.transportMode === 'cycling') {
+        setSpeedLimit(25);
+        return;
+      }
+      if (state.transportMode === 'walking') {
+        setSpeedLimit(6);
+        return;
+      }
+
       if (route.legs && route.legs[0] && route.legs[0].steps && route.legs[0].steps.length) {
         const firstStep = route.legs[0].steps[0];
         const roadName = (firstStep.name || '').toLowerCase();
