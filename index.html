@@ -1320,7 +1320,10 @@
             effectiveDurationSec = (route.distance / 1000) / 4.8 * 3600;
           }
         } else {
-          // Car Mode: Apply peak hour penalty (+25% during Monday-Friday 7h-9h & 17h-19h)
+          // Car Mode: Apply 1.58x realistic urban/road calibration factor (red lights, roundabouts, traffic)
+          effectiveDurationSec = route.duration * 1.58;
+
+          // Peak hour adjustment (+25% during Monday-Friday 7h-9h & 17h-19h)
           if (isPeakHour()) {
             effectiveDurationSec *= 1.25;
             hudTrafficBadge.classList.add('active');
@@ -1450,7 +1453,12 @@
       }
 
       // Baseline speed per transport mode
-      let baseSpeedKmh = 50;
+      let baseSpeedKmh = 35;
+      if (state.activeRoute && state.activeRoute.distance && state.activeRoute.duration) {
+        // Calibrated baseline from route: distance / (rawDuration * 1.58)
+        const calibratedDurationSec = state.activeRoute.duration * 1.58;
+        baseSpeedKmh = Math.max(18, Math.min(90, (state.activeRoute.distance / calibratedDurationSec) * 3.6));
+      }
       if (mode === 'cycling') baseSpeedKmh = 14.5;
       if (mode === 'walking') baseSpeedKmh = 4.8;
 
@@ -1463,7 +1471,7 @@
           if (currentSpeed > baseSpeedKmh) {
             effectiveSpeed = currentSpeed * 0.9 + baseSpeedKmh * 0.1;
           } else {
-            effectiveSpeed = currentSpeed * 0.6 + baseSpeedKmh * 0.4;
+            effectiveSpeed = currentSpeed * 0.65 + baseSpeedKmh * 0.35;
           }
         } else if (mode === 'cycling') {
           effectiveSpeed = Math.max(8, Math.min(45, currentSpeed * 0.75 + baseSpeedKmh * 0.25));
