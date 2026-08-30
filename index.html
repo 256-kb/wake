@@ -1381,37 +1381,66 @@
     }
 
     function calculateCalibratedDrivingDuration(route) {
-      if (!route) return 0;
-      const steps = route.legs && route.legs[0] && route.legs[0].steps;
-      if (!steps || !steps.length) {
-        return Math.round(route.duration * 1.18);
-      }
+      if (!route || !route.legs || !route.legs[0]) return route ? route.duration : 0;
+      const leg = route.legs[0];
 
-      let totalCalibratedSec = 0;
+      // 1. Direct OpenStreetMap segment annotation calculation (exact per-way speeds & distance)
+      if (leg.annotation && leg.annotation.distance && leg.annotation.speed && leg.annotation.distance.length === leg.annotation.speed.length) {
+        const distances = leg.annotation.distance;
+        const speeds = leg.annotation.speed; // in m/s
+        let totalSec = 0;
 
-      for (const step of steps) {
-        const distMeters = step.distance || 0;
-        const rawDurSec = step.duration || 0;
-        if (distMeters === 0 || rawDurSec === 0) continue;
+        for (let i = 0; i < distances.length; i++) {
+          const distM = distances[i] || 0;
+          const rawSpeedKmh = (speeds[i] || 13.8) * 3.6; // convert m/s to km/h
+          if (distM <= 0) continue;
 
-        const stepSpeedKmh = (distMeters / rawDurSec) * 3.6;
+          // Real driving speed calibrated by OSM highway tag & speed limit
+          let realSpeedKmh = rawSpeedKmh;
+          if (rawSpeedKmh <= 25) {
+            realSpeedKmh = Math.max(15, rawSpeedKmh * 0.82); // Zone 30 / hypercentre / dense traffic
+          } else if (rawSpeedKmh <= 55) {
+            realSpeedKmh = Math.max(25, rawSpeedKmh * 0.85); // 50 km/h with intersections
+          } else if (rawSpeedKmh <= 80) {
+            realSpeedKmh = Math.max(55, rawSpeedKmh * 0.94); // Secondary / 70 zone
+          } else if (rawSpeedKmh <= 100) {
+            realSpeedKmh = Math.max(75, rawSpeedKmh * 0.96); // Périphérique / 90 zone
+          } else {
+            realSpeedKmh = rawSpeedKmh * 0.98; // Voie express (110) & Autoroute (130)
+          }
 
-        // Calibrated factors: urban zones 30 (1.22x), city 50 (1.15x), ring roads (1.06x), highways (1.02x)
-        let segmentFactor = 1.02;
-        if (stepSpeedKmh <= 30) {
-          segmentFactor = 1.22; // Zone 30 / hypercentre / dense city
-        } else if (stepSpeedKmh <= 60) {
-          segmentFactor = 1.15; // City 50 with traffic lights
-        } else if (stepSpeedKmh <= 90) {
-          segmentFactor = 1.06; // Ring roads / expressways
-        } else {
-          segmentFactor = 1.02; // Motorways / Autoroutes
+          totalSec += (distM / 1000) / realSpeedKmh * 3600;
         }
 
-        totalCalibratedSec += (rawDurSec * segmentFactor);
+        return Math.round(totalSec);
       }
 
-      return Math.round(totalCalibratedSec);
+      // 2. Fallback using route steps with OSM speed limits
+      const steps = leg.steps;
+      if (steps && steps.length) {
+        let totalSec = 0;
+        for (const step of steps) {
+          const distMeters = step.distance || 0;
+          const rawDurSec = step.duration || 0;
+          if (distMeters <= 0 || rawDurSec <= 0) continue;
+
+          const stepSpeedKmh = (distMeters / rawDurSec) * 3.6;
+          let segmentFactor = 1.02;
+          if (stepSpeedKmh <= 30) {
+            segmentFactor = 1.22;
+          } else if (stepSpeedKmh <= 60) {
+            segmentFactor = 1.15;
+          } else if (stepSpeedKmh <= 90) {
+            segmentFactor = 1.06;
+          } else {
+            segmentFactor = 1.02;
+          }
+          totalSec += (rawDurSec * segmentFactor);
+        }
+        return Math.round(totalSec);
+      }
+
+      return Math.round(route.duration * 1.12);
     }
 
     function inferSpeedLimitFromRoute(route) {
