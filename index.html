@@ -280,22 +280,6 @@
       color: #EBEBF599;
     }
 
-    .hud-traffic-badge {
-      display: none;
-      background: rgba(255, 149, 0, 0.25);
-      color: #FF9F0A;
-      font-size: 10px;
-      font-weight: 700;
-      padding: 1px 6px;
-      border-radius: 6px;
-      border: 0.5px solid rgba(255, 149, 0, 0.5);
-    }
-
-    .hud-traffic-badge.active {
-      display: inline-flex;
-      align-items: center;
-    }
-
     /* iOS Segmented Transport Switch */
     .transport-switch {
       display: flex;
@@ -676,7 +660,6 @@
         </div>
         <div class="hud-eta-row">
           <span class="hud-eta" id="hudEta">Arrivée --:--</span>
-          <span class="hud-traffic-badge" id="hudTrafficBadge">⚡ Heure de pointe +25%</span>
         </div>
         <div class="hud-radar-alert" id="hudRadarAlert">
           <svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor">
@@ -922,7 +905,6 @@
     const hudTime = document.getElementById('hudTime');
     const hudDist = document.getElementById('hudDist');
     const hudEta = document.getElementById('hudEta');
-    const hudTrafficBadge = document.getElementById('hudTrafficBadge');
     const hudRadarAlert = document.getElementById('hudRadarAlert');
     const hudRadarText = document.getElementById('hudRadarText');
     const transportButtons = document.querySelectorAll('.transport-btn');
@@ -1230,15 +1212,6 @@
     /* ==========================================================
        OSRM ROUTING, TRANSPORT MODES & PEAK HOUR TRAFFIC
        ========================================================== */
-    function isPeakHour() {
-      const now = new Date();
-      const day = now.getDay(); // 0 is Sunday, 1-5 Mon-Fri, 6 Sat
-      const hour = now.getHours();
-      const isWeekday = day >= 1 && day <= 5;
-      const isPeak = (hour >= 7 && hour < 9) || (hour >= 17 && hour < 19);
-      return isWeekday && isPeak;
-    }
-
     // Transport Mode Buttons Click Listeners
     transportButtons.forEach(btn => {
       btn.addEventListener('click', (e) => {
@@ -1305,38 +1278,24 @@
           });
         }
 
-        // Calculate calibrated travel duration reflecting real OSM segment speeds & road types
+        // Calculate travel duration reflecting real OSM segment speeds & speed limits
         let effectiveDurationSec = route.duration;
         const avgSpeedKmh = (route.distance / route.duration) * 3.6;
 
         if (mode === 'cycling') {
-          // If server returned car speeds (> 28 km/h), compute realistic bike pace (~14.5 km/h)
           if (avgSpeedKmh > 28) {
             effectiveDurationSec = (route.distance / 1000) / 14.5 * 3600;
           }
         } else if (mode === 'walking') {
-          // If server returned car speeds (> 7 km/h), compute realistic walking pace (~4.8 km/h)
           if (avgSpeedKmh > 7) {
             effectiveDurationSec = (route.distance / 1000) / 4.8 * 3600;
           }
         } else {
-          // Car Mode: Calibrate duration using per-step OSM way speeds (zones 30, 50, périph, autoroutes)
+          // Car Mode: Pure OpenStreetMap micro-segment calculation aligned with real speed limits
           effectiveDurationSec = calculateCalibratedDrivingDuration(route);
-
-          // Peak hour adjustment (+25% during Monday-Friday 7h-9h & 17h-19h)
-          if (isPeakHour()) {
-            effectiveDurationSec *= 1.25;
-            hudTrafficBadge.classList.add('active');
-          } else {
-            hudTrafficBadge.classList.remove('active');
-          }
         }
 
         state.activeRoute.calibratedDuration = effectiveDurationSec;
-
-        if (mode !== 'driving') {
-          hudTrafficBadge.classList.remove('active');
-        }
 
         // Update HUD Metrics
         const distanceKm = (route.distance / 1000).toFixed(route.distance < 10000 ? 1 : 0);
@@ -1395,18 +1354,20 @@
           const rawSpeedKmh = (speeds[i] || 13.8) * 3.6; // convert m/s to km/h
           if (distM <= 0) continue;
 
-          // Real driving speed calibrated by OSM highway tag & speed limit
+          // Real driving speed aligned with OSM speed limits (30->25, 50->45, 70->65, 80/90->85, 110->105, 130->125)
           let realSpeedKmh = rawSpeedKmh;
-          if (rawSpeedKmh <= 25) {
-            realSpeedKmh = Math.max(15, rawSpeedKmh * 0.82); // Zone 30 / hypercentre / dense traffic
-          } else if (rawSpeedKmh <= 55) {
-            realSpeedKmh = Math.max(25, rawSpeedKmh * 0.85); // 50 km/h with intersections
-          } else if (rawSpeedKmh <= 80) {
-            realSpeedKmh = Math.max(55, rawSpeedKmh * 0.94); // Secondary / 70 zone
-          } else if (rawSpeedKmh <= 100) {
-            realSpeedKmh = Math.max(75, rawSpeedKmh * 0.96); // Périphérique / 90 zone
+          if (rawSpeedKmh <= 32) {
+            realSpeedKmh = Math.min(25, Math.max(18, rawSpeedKmh * 0.88));
+          } else if (rawSpeedKmh <= 58) {
+            realSpeedKmh = Math.min(45, Math.max(35, rawSpeedKmh * 0.88));
+          } else if (rawSpeedKmh <= 78) {
+            realSpeedKmh = Math.min(65, Math.max(58, rawSpeedKmh * 0.93));
+          } else if (rawSpeedKmh <= 98) {
+            realSpeedKmh = Math.min(85, Math.max(78, rawSpeedKmh * 0.95));
+          } else if (rawSpeedKmh <= 118) {
+            realSpeedKmh = Math.min(105, Math.max(98, rawSpeedKmh * 0.96));
           } else {
-            realSpeedKmh = rawSpeedKmh * 0.98; // Voie express (110) & Autoroute (130)
+            realSpeedKmh = Math.min(125, Math.max(115, rawSpeedKmh * 0.97));
           }
 
           totalSec += (distM / 1000) / realSpeedKmh * 3600;
@@ -1415,32 +1376,22 @@
         return Math.round(totalSec);
       }
 
-      // 2. Fallback using route steps with OSM speed limits
+      // 2. Fallback per step
       const steps = leg.steps;
       if (steps && steps.length) {
         let totalSec = 0;
-        for (const step of steps) {
-          const distMeters = step.distance || 0;
-          const rawDurSec = step.duration || 0;
-          if (distMeters <= 0 || rawDurSec <= 0) continue;
-
-          const stepSpeedKmh = (distMeters / rawDurSec) * 3.6;
-          let segmentFactor = 1.02;
-          if (stepSpeedKmh <= 30) {
-            segmentFactor = 1.22;
-          } else if (stepSpeedKmh <= 60) {
-            segmentFactor = 1.15;
-          } else if (stepSpeedKmh <= 90) {
-            segmentFactor = 1.06;
-          } else {
-            segmentFactor = 1.02;
-          }
-          totalSec += (rawDurSec * segmentFactor);
+        for (const s of steps) {
+          const distM = s.distance || 0;
+          const rawDur = s.duration || 0;
+          if (distM <= 0 || rawDur <= 0) continue;
+          const spd = (distM / rawDur) * 3.6;
+          let realSpd = spd <= 32 ? 25 : (spd <= 58 ? 45 : (spd <= 78 ? 65 : (spd <= 98 ? 85 : (spd <= 118 ? 105 : 125))));
+          totalSec += (distM / 1000) / realSpd * 3600;
         }
         return Math.round(totalSec);
       }
 
-      return Math.round(route.duration * 1.12);
+      return Math.round(route.duration);
     }
 
     function inferSpeedLimitFromRoute(route) {
@@ -1547,15 +1498,6 @@
       }
 
       let durationSec = (remMeters / 1000) / effectiveSpeed * 3600;
-
-      // Peak hour adjustment in car mode
-      const isPeak = mode === 'driving' && isPeakHour();
-      if (isPeak && currentSpeed < 45) {
-        durationSec *= 1.25;
-        hudTrafficBadge.classList.add('active');
-      } else {
-        hudTrafficBadge.classList.remove('active');
-      }
 
       // Update HUD values smoothly
       const distanceKm = (remMeters / 1000).toFixed(remMeters < 10000 ? 1 : 0);
