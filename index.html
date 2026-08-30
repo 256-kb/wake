@@ -1381,11 +1381,12 @@
     }
 
     function calculateCalibratedDrivingDuration(route) {
-      if (!route || !route.legs || !route.legs[0] || !route.legs[0].steps) {
-        return route ? Math.round(route.duration * 1.08) : 0;
+      if (!route) return 0;
+      const steps = route.legs && route.legs[0] && route.legs[0].steps;
+      if (!steps || !steps.length) {
+        return Math.round(route.duration * 1.18);
       }
 
-      const steps = route.legs[0].steps;
       let totalCalibratedSec = 0;
 
       for (const step of steps) {
@@ -1395,25 +1396,19 @@
 
         const stepSpeedKmh = (distMeters / rawDurSec) * 3.6;
 
-        // Calibrate based on real OSM road segment speeds (zones 30, streets at 50, ring roads, expressways)
+        // Calibrated factors: urban zones 30 (1.22x), city 50 (1.15x), ring roads (1.06x), highways (1.02x)
         let segmentFactor = 1.02;
-        if (stepSpeedKmh <= 25) {
-          segmentFactor = 1.15; // Zone 30 / pedestrianized / residential / dense city
-        } else if (stepSpeedKmh <= 45) {
-          segmentFactor = 1.12; // 50 km/h city boulevards with traffic lights
-        } else if (stepSpeedKmh <= 75) {
-          segmentFactor = 1.06; // Ring roads / primary secondary arteries
+        if (stepSpeedKmh <= 30) {
+          segmentFactor = 1.22; // Zone 30 / hypercentre / dense city
+        } else if (stepSpeedKmh <= 60) {
+          segmentFactor = 1.15; // City 50 with traffic lights
+        } else if (stepSpeedKmh <= 90) {
+          segmentFactor = 1.06; // Ring roads / expressways
         } else {
-          segmentFactor = 1.02; // Motorways & Expressways
+          segmentFactor = 1.02; // Motorways / Autoroutes
         }
 
-        // Realistic turn / maneuver delay (+2.5s for non-straight turns)
-        let turnDelay = 0;
-        if (step.maneuver && step.maneuver.type && !['depart', 'arrive', 'straight', 'continue'].includes(step.maneuver.type)) {
-          turnDelay = 2.5;
-        }
-
-        totalCalibratedSec += (rawDurSec * segmentFactor) + turnDelay;
+        totalCalibratedSec += (rawDurSec * segmentFactor);
       }
 
       return Math.round(totalCalibratedSec);
