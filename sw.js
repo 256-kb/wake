@@ -1,4 +1,4 @@
-const CACHE_NAME = 'wake-v2';
+const CACHE_NAME = 'wake-v3';
 const STATIC_ASSETS = [
   './',
   './index.html',
@@ -9,8 +9,8 @@ const STATIC_ASSETS = [
   './icons/icon-192.png',
   './icons/icon-512.png',
   './icons/apple-touch-icon.png',
-  'https://unpkg.com/leaflet@1.9.4/dist/leaflet.css',
-  'https://unpkg.com/leaflet@1.9.4/dist/leaflet.js'
+  'https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css',
+  'https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js'
 ];
 
 // Install event - caching static assets
@@ -41,11 +41,11 @@ self.addEventListener('activate', (event) => {
 self.addEventListener('fetch', (event) => {
   const url = new URL(event.request.url);
 
-  // OSRM routing requests -> always network first
-  if (url.hostname.includes('project-osrm.org')) {
+  // OSRM & Overpass API requests -> always network first
+  if (url.hostname.includes('project-osrm.org') || url.hostname.includes('overpass-api.de')) {
     event.respondWith(
       fetch(event.request).catch(() => {
-        return new Response(JSON.stringify({ code: 'OfflineError', message: 'Pas de connexion réseau pour le calcul d\'itinéraire.' }), {
+        return new Response(JSON.stringify({ code: 'OfflineError', message: 'Pas de connexion réseau.' }), {
           headers: { 'Content-Type': 'application/json' }
         });
       })
@@ -53,8 +53,8 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
-  // OpenStreetMap tile caching (Stale-While-Revalidate or Cache-First)
-  if (url.hostname.includes('tile.openstreetmap.org') || url.hostname.includes('cartocdn.com')) {
+  // Vector map tiles & styles caching (OpenFreeMap / OSM)
+  if (url.hostname.includes('openfreemap.org') || url.hostname.includes('openstreetmap.org')) {
     event.respondWith(
       caches.open('map-tiles-cache').then((tileCache) => {
         return tileCache.match(event.request).then((cachedResponse) => {

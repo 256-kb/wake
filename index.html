@@ -16,15 +16,16 @@
   <link rel="apple-touch-icon" sizes="180x180" href="icons/apple-touch-icon.png" />
   <link rel="shortcut icon" href="favicon.ico" />
 
-  <!-- Leaflet CSS -->
-  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="" />
+  <!-- MapLibre GL CSS -->
+  <link rel="stylesheet" href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css" />
 
   <style>
     :root {
       --primary: #007AFF;
       --primary-dark: #0056b3;
       --danger: #FF3B30;
-      --bg-glass: rgba(255, 255, 255, 0.92);
+      --warning: #FF9500;
+      --bg-glass: rgba(255, 255, 255, 0.94);
       --bg-glass-dark: rgba(28, 28, 30, 0.88);
       --text-dark: #1c1c1e;
       --shadow: 0 4px 20px rgba(0, 0, 0, 0.18);
@@ -58,6 +59,16 @@
       z-index: 1;
     }
 
+    /* MapLibre Attribution override */
+    .maplibregl-ctrl-attrib {
+      font-size: 9px !important;
+      background: rgba(255, 255, 255, 0.6) !important;
+      backdrop-filter: blur(5px);
+      padding: 2px 6px !important;
+      border-top-left-radius: 6px;
+      margin: 0 !important;
+    }
+
     /* ==========================================================
        USER LOCATION MARKER & ROTATING VISION BEAM
        ========================================================== */
@@ -78,7 +89,7 @@
       top: 0;
       left: 0;
       transform-origin: 80px 80px;
-      transition: transform 0.12s linear;
+      transition: transform 0.1s linear;
       pointer-events: none;
       display: none;
     }
@@ -125,6 +136,7 @@
       flex-direction: column;
       align-items: center;
       justify-content: center;
+      cursor: pointer;
     }
 
     .radar-badge {
@@ -148,7 +160,9 @@
       fill: #FF9500;
     }
 
-    /* Top Floating Search & HUD Area */
+    /* ==========================================================
+       TOP SEARCH BAR & POI MODE SELECTOR
+       ========================================================== */
     .top-container {
       position: absolute;
       top: calc(var(--safe-top) + 12px);
@@ -161,33 +175,25 @@
       pointer-events: none;
     }
 
-    .search-box {
+    .search-card {
       pointer-events: auto;
       background: var(--bg-glass);
       backdrop-filter: blur(20px);
       -webkit-backdrop-filter: blur(20px);
-      border-radius: 16px;
+      border-radius: 18px;
       box-shadow: var(--shadow);
+      border: 0.5px solid rgba(255, 255, 255, 0.7);
       display: flex;
-      align-items: center;
-      padding: 6px 12px;
-      border: 0.5px solid rgba(255, 255, 255, 0.6);
+      flex-direction: column;
+      overflow: hidden;
       transition: all 0.3s ease;
     }
 
-    .search-box input {
-      flex: 1;
-      border: none;
-      background: transparent;
-      font-size: 15px;
-      color: var(--text-dark);
-      padding: 6px 8px;
-      outline: none;
-      font-family: inherit;
-    }
-
-    .search-box input::placeholder {
-      color: #8E8E93;
+    .search-input-row {
+      display: flex;
+      align-items: center;
+      padding: 6px 12px;
+      gap: 8px;
     }
 
     .search-icon {
@@ -197,6 +203,53 @@
       display: flex;
       align-items: center;
       justify-content: center;
+      flex-shrink: 0;
+    }
+
+    .search-input-row input {
+      flex: 1;
+      border: none;
+      background: transparent;
+      font-size: 15px;
+      color: var(--text-dark);
+      padding: 6px 4px;
+      outline: none;
+      font-family: inherit;
+    }
+
+    .search-input-row input::placeholder {
+      color: #8E8E93;
+    }
+
+    /* Mode Switcher Segmented Control (Adresse / POI) */
+    .mode-switch {
+      display: flex;
+      background: rgba(118, 118, 128, 0.12);
+      border-radius: 10px;
+      padding: 2px;
+      gap: 2px;
+      flex-shrink: 0;
+    }
+
+    .mode-btn {
+      border: none;
+      background: transparent;
+      padding: 4px 10px;
+      border-radius: 8px;
+      font-size: 12px;
+      font-weight: 600;
+      color: #8E8E93;
+      cursor: pointer;
+      transition: all 0.2s ease;
+      display: flex;
+      align-items: center;
+      gap: 4px;
+    }
+
+    .mode-btn.active {
+      background: #FFFFFF;
+      color: var(--primary);
+      box-shadow: 0 1px 4px rgba(0, 0, 0, 0.12);
     }
 
     /* Route HUD Info Banner */
@@ -250,7 +303,6 @@
       color: #EBEBF599;
     }
 
-    /* Radar alert in HUD */
     .hud-radar-alert {
       display: none;
       align-items: center;
@@ -286,6 +338,105 @@
     }
 
     /* ==========================================================
+       DROPDOWN: RESULTS & RECENT HISTORY
+       ========================================================== */
+    .dropdown-container {
+      pointer-events: auto;
+      background: var(--bg-glass);
+      backdrop-filter: blur(25px);
+      -webkit-backdrop-filter: blur(25px);
+      border-radius: 16px;
+      box-shadow: var(--shadow);
+      max-height: 280px;
+      overflow-y: auto;
+      display: none;
+      border: 0.5px solid rgba(255, 255, 255, 0.7);
+    }
+
+    .dropdown-container.active {
+      display: block;
+    }
+
+    .dropdown-header {
+      padding: 10px 14px 6px;
+      font-size: 11px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      color: #8E8E93;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      border-bottom: 0.5px solid rgba(0, 0, 0, 0.05);
+    }
+
+    .btn-clear-history {
+      background: none;
+      border: none;
+      color: var(--primary);
+      font-size: 11px;
+      font-weight: 600;
+      cursor: pointer;
+    }
+
+    .list-item {
+      padding: 12px 14px;
+      font-size: 14px;
+      color: var(--text-dark);
+      border-bottom: 0.5px solid rgba(0, 0, 0, 0.05);
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+    }
+
+    .list-item:last-child {
+      border-bottom: none;
+    }
+
+    .list-item:active {
+      background: rgba(0, 122, 255, 0.08);
+    }
+
+    .list-item-content {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+      overflow: hidden;
+    }
+
+    .list-item-title {
+      font-weight: 600;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .list-item-subtitle {
+      font-size: 12px;
+      color: #8E8E93;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .list-item-meta {
+      font-size: 12px;
+      font-weight: 700;
+      color: var(--primary);
+      white-space: nowrap;
+    }
+
+    .list-item-icon {
+      font-size: 16px;
+      width: 24px;
+      text-align: center;
+      color: #8E8E93;
+    }
+
+    /* ==========================================================
        BOTTOM LEFT: SPEEDOMETER & SPEED LIMIT SIGN
        ========================================================== */
     .bottom-left-hud {
@@ -300,7 +451,6 @@
       pointer-events: none;
     }
 
-    /* Speed Limit Sign (European Round Road Sign) */
     .speed-limit-sign {
       width: 44px;
       height: 44px;
@@ -322,7 +472,6 @@
       font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
     }
 
-    /* Blinking pulse when exceeding speed limit */
     @keyframes blinkOverspeed {
       0% {
         transform: scale(1);
@@ -346,7 +495,6 @@
       border-color: #FF1A0D;
     }
 
-    /* Speedometer Pill */
     .speedometer-box {
       background: var(--bg-glass-dark);
       backdrop-filter: blur(20px);
@@ -379,7 +527,9 @@
       letter-spacing: 0.5px;
     }
 
-    /* Floating Action Buttons (Bottom Right) */
+    /* ==========================================================
+       BOTTOM RIGHT: 3D PERSPECTIVE & RECENTER BUTTONS
+       ========================================================== */
     .fab-group {
       position: absolute;
       bottom: calc(var(--safe-bottom) + 24px);
@@ -405,6 +555,8 @@
       color: #1C1C1E;
       cursor: pointer;
       transition: transform 0.15s ease, background 0.2s ease, color 0.2s ease;
+      font-weight: 800;
+      font-size: 14px;
     }
 
     .fab:active {
@@ -449,72 +601,35 @@
       opacity: 1;
       transform: translateX(-50%) translateY(0);
     }
-
-    /* Search Autocomplete Results */
-    .search-results {
-      pointer-events: auto;
-      background: var(--bg-glass);
-      backdrop-filter: blur(20px);
-      -webkit-backdrop-filter: blur(20px);
-      border-radius: 14px;
-      box-shadow: var(--shadow);
-      margin-top: 4px;
-      max-height: 220px;
-      overflow-y: auto;
-      display: none;
-      border: 0.5px solid rgba(255, 255, 255, 0.6);
-    }
-
-    .search-results.active {
-      display: block;
-    }
-
-    .search-item {
-      padding: 12px 14px;
-      font-size: 14px;
-      color: var(--text-dark);
-      border-bottom: 0.5px solid rgba(0, 0, 0, 0.06);
-      cursor: pointer;
-      line-height: 1.3;
-    }
-
-    .search-item:last-child {
-      border-bottom: none;
-    }
-
-    .search-item:active {
-      background: rgba(0, 122, 255, 0.1);
-    }
-
-    .leaflet-control-attribution {
-      font-size: 9px !important;
-      background: rgba(255, 255, 255, 0.6) !important;
-      backdrop-filter: blur(5px);
-      padding: 2px 6px !important;
-      margin: 0 !important;
-      border-top-left-radius: 6px;
-    }
   </style>
 </head>
 <body>
 
-  <!-- Fullscreen Map -->
+  <!-- Fullscreen WebGL 3D Map -->
   <div id="map"></div>
 
   <!-- Top Search & HUD Area -->
   <div class="top-container">
-    <div class="search-box" id="searchBox">
-      <div class="search-icon">
-        <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-          <circle cx="11" cy="11" r="8"></circle>
-          <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
-        </svg>
+    <div class="search-card">
+      <div class="search-input-row">
+        <div class="search-icon">
+          <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="11" cy="11" r="8"></circle>
+            <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+          </svg>
+        </div>
+        <input type="text" id="searchInput" placeholder="Rechercher une adresse..." autocomplete="off" />
+        
+        <!-- Mode Switcher (Adresse vs POI) -->
+        <div class="mode-switch">
+          <button class="mode-btn active" id="btnModeAddress" title="Recherche d'adresse">Adresse</button>
+          <button class="mode-btn" id="btnModePOI" title="Points d'intérêt (boulangerie, supermarché...)">POI</button>
+        </div>
       </div>
-      <input type="text" id="searchInput" placeholder="Rechercher ou toucher la carte..." autocomplete="off" />
     </div>
 
-    <!-- Search Results Dropdown -->
-    <div class="search-results" id="searchResults"></div>
+    <!-- Dropdown: Results & Recent History -->
+    <div class="dropdown-container" id="dropdownContainer"></div>
 
     <!-- Route Status HUD -->
     <div class="route-hud" id="routeHud">
@@ -545,8 +660,14 @@
     </div>
   </div>
 
-  <!-- Bottom-Right Floating Controls -->
+  <!-- Bottom-Right Floating Controls (3D & Recenter) -->
   <div class="fab-group">
+    <!-- 3D / 2D Perspective Toggle -->
+    <button class="fab" id="btn3D" title="Vue perspective 3D">
+      <span id="label3D">3D</span>
+    </button>
+
+    <!-- Recenter / Auto-follow -->
     <button class="fab active" id="btnRecenter" title="Recentrer">
       <svg viewBox="0 0 24 24">
         <path d="M12 8c-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4-1.79-4-4-4zm8.94 3A8.994 8.994 0 0 0 13 3.06V1h-2v2.06A8.994 8.994 0 0 0 3.06 11H1v2h2.06A8.994 8.994 0 0 0 11 20.94V23h2v-2.06A8.994 8.994 0 0 0 20.94 13H23v-2h-2.06zM12 19c-3.87 0-7-3.13-7-7s3.13-7 7-7 7 3.13 7 7-3.13 7-7 7z"/>
@@ -557,8 +678,8 @@
   <!-- Toast Notification -->
   <div class="toast" id="toast"></div>
 
-  <!-- Leaflet JS -->
-  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+  <!-- MapLibre GL JS (WebGL + 3D Buildings) -->
+  <script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
 
   <script>
     /* ==========================================================
@@ -567,72 +688,164 @@
     const state = {
       userCoords: null,         // [lat, lon]
       userAccuracy: null,       // meters
-      userHeading: null,        // degrees (0 = North)
+      userHeading: null,        // degrees from motion
       compassHeading: null,     // degrees from device compass
-      currentSpeedKmh: 0,       // current speed in km/h
-      speedLimitKmh: 50,        // current road speed limit
+      currentSpeedKmh: 0,       // current speed
+      speedLimitKmh: 50,        // speed limit
       destination: null,        // [lat, lon]
-      isAutoFollow: true,       // auto-center map on user
-      activeRoute: null,        // OSRM route data
-      routeCoordinates: [],     // Array of [lat, lon]
-      routeRadars: [],          // Speed cameras filtered on the route
-      radarMarkers: [],         // Leaflet markers for radars
+      isAutoFollow: true,       // auto-follow user position
+      is3DMode: false,          // 3D perspective camera mode
+      searchMode: 'address',    // 'address' or 'poi'
+      activeRoute: null,        // OSRM route object
+      routeCoordinates: [],     // Array of [lon, lat] for MapLibre GeoJSON
+      routeRadars: [],          // Speed cameras on route
+      radarMarkers: [],         // MapLibre markers
       lastPosTime: null,
       wakeLock: null,
       watchId: null
     };
 
     /* ==========================================================
-       MAP INITIALIZATION
+       LOCALSTORAGE HISTORY MANAGER
        ========================================================== */
-    const map = L.map('map', {
-      zoomControl: false,
-      attributionControl: true
-    }).setView([48.8566, 2.3522], 15);
+    const HISTORY_KEY = 'wake_recent_destinations';
 
-    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-      maxZoom: 19,
-      attribution: '© OpenStreetMap'
-    }).addTo(map);
+    function getHistory() {
+      try {
+        return JSON.parse(localStorage.getItem(HISTORY_KEY) || '[]');
+      } catch (e) {
+        return [];
+      }
+    }
+
+    function saveToHistory(item) {
+      // item: { title, subtitle, lat, lon, type }
+      let history = getHistory();
+      // Remove existing item with same coords or title
+      history = history.filter(h => !(Math.abs(h.lat - item.lat) < 0.0001 && Math.abs(h.lon - item.lon) < 0.0001));
+      history.unshift({
+        title: item.title,
+        subtitle: item.subtitle || '',
+        lat: item.lat,
+        lon: item.lon,
+        type: item.type || 'address',
+        timestamp: Date.now()
+      });
+      if (history.length > 5) history = history.slice(0, 5);
+      localStorage.setItem(HISTORY_KEY, JSON.stringify(history));
+    }
+
+    function clearHistory() {
+      localStorage.removeItem(HISTORY_KEY);
+      renderHistory();
+    }
 
     /* ==========================================================
-       CUSTOM USER MARKER WITH VISION CONE GRADIENT
+       MAPLIBRE GL INITIALIZATION (3D & VECTOR TILES)
        ========================================================== */
-    const userMarkerIcon = L.divIcon({
-      className: 'user-marker-icon-wrapper',
-      html: `
-        <div class="user-marker-container">
-          <div class="user-beam" id="userBeam">
-            <svg viewBox="0 0 160 160" width="160" height="160">
-              <defs>
-                <radialGradient id="beamGrad" cx="50%" cy="50%" r="50%" fx="50%" fy="50%">
-                  <stop offset="0%" stop-color="#007AFF" stop-opacity="0.55" />
-                  <stop offset="35%" stop-color="#007AFF" stop-opacity="0.30" />
-                  <stop offset="70%" stop-color="#007AFF" stop-opacity="0.10" />
-                  <stop offset="100%" stop-color="#007AFF" stop-opacity="0.0" />
-                </radialGradient>
-              </defs>
-              <path d="M 80 80 L 30 10 A 80 80 0 0 1 130 10 Z" fill="url(#beamGrad)" />
-            </svg>
-          </div>
-          <div class="user-dot"></div>
-        </div>
-      `,
-      iconSize: [160, 160],
-      iconAnchor: [80, 80]
+    const map = new maplibregl.Map({
+      container: 'map',
+      style: 'https://tiles.openfreemap.org/styles/liberty',
+      center: [2.3522, 48.8566],
+      zoom: 16,
+      pitch: 0,
+      bearing: 0,
+      attributionControl: true
     });
 
-    let userMarker = null;
-    let userAccuracyCircle = null;
-    let destMarker = null;
-    let routeBorderLayer = null;
-    let routeLineLayer = null;
+    map.on('load', () => {
+      // Add Route Source and Layers
+      map.addSource('route', {
+        type: 'geojson',
+        data: {
+          type: 'Feature',
+          properties: {},
+          geometry: { type: 'LineString', coordinates: [] }
+        }
+      });
 
-    const destMarkerIcon = L.divIcon({
-      className: 'dest-marker',
-      html: '<div class="dest-dot"></div>',
-      iconSize: [24, 24],
-      iconAnchor: [12, 12]
+      // White outline casing for route
+      map.addLayer({
+        id: 'route-casing',
+        type: 'line',
+        source: 'route',
+        layout: { 'line-join': 'round', 'line-cap': 'round' },
+        paint: {
+          'line-color': '#FFFFFF',
+          'line-width': 10,
+          'line-opacity': 0.95
+        }
+      });
+
+      // Distinct thick blue route line
+      map.addLayer({
+        id: 'route-line',
+        type: 'line',
+        source: 'route',
+        layout: { 'line-join': 'round', 'line-cap': 'round' },
+        paint: {
+          'line-color': '#0066FF',
+          'line-width': 6,
+          'line-opacity': 1.0
+        }
+      });
+
+      // Enable 3D Buildings if available in the vector style
+      const layers = map.getStyle().layers;
+      const labelLayer = layers.find(l => l.type === 'symbol' && l.layout && l.layout['text-field']);
+      const labelLayerId = labelLayer ? labelLayer.id : undefined;
+
+      if (!map.getLayer('3d-buildings') && map.getSource('openmaptiles')) {
+        map.addLayer({
+          id: '3d-buildings',
+          source: 'openmaptiles',
+          'source-layer': 'building',
+          type: 'fill-extrusion',
+          minzoom: 14,
+          paint: {
+            'fill-extrusion-color': '#d1d8e0',
+            'fill-extrusion-height': ['coalesce', ['get', 'render_height'], ['get', 'height'], 12],
+            'fill-extrusion-base': ['coalesce', ['get', 'render_min_height'], ['get', 'min_height'], 0],
+            'fill-extrusion-opacity': 0.85
+          }
+        }, labelLayerId);
+      }
+    });
+
+    /* ==========================================================
+       USER LOCATION & DESTINATION MARKERS
+       ========================================================== */
+    // Create User Marker DOM Element with Vision Beam
+    const userMarkerEl = document.createElement('div');
+    userMarkerEl.className = 'user-marker-container';
+    userMarkerEl.innerHTML = `
+      <div class="user-beam" id="userBeam">
+        <svg viewBox="0 0 160 160" width="160" height="160">
+          <defs>
+            <radialGradient id="beamGrad" cx="50%" cy="50%" r="50%" fx="50%" fy="50%">
+              <stop offset="0%" stop-color="#007AFF" stop-opacity="0.55" />
+              <stop offset="35%" stop-color="#007AFF" stop-opacity="0.30" />
+              <stop offset="70%" stop-color="#007AFF" stop-opacity="0.10" />
+              <stop offset="100%" stop-color="#007AFF" stop-opacity="0.0" />
+            </radialGradient>
+          </defs>
+          <path d="M 80 80 L 30 10 A 80 80 0 0 1 130 10 Z" fill="url(#beamGrad)" />
+        </svg>
+      </div>
+      <div class="user-dot"></div>
+    `;
+
+    const userMarker = new maplibregl.Marker({
+      element: userMarkerEl,
+      anchor: 'center'
+    });
+
+    // Destination Marker DOM Element
+    const destMarkerEl = document.createElement('div');
+    destMarkerEl.innerHTML = '<div class="dest-dot"></div>';
+    const destMarker = new maplibregl.Marker({
+      element: destMarkerEl,
+      anchor: 'center'
     });
 
     /* ==========================================================
@@ -645,8 +858,12 @@
     const hudRadarText = document.getElementById('hudRadarText');
     const btnClearRoute = document.getElementById('btnClearRoute');
     const btnRecenter = document.getElementById('btnRecenter');
+    const btn3D = document.getElementById('btn3D');
+    const label3D = document.getElementById('label3D');
     const searchInput = document.getElementById('searchInput');
-    const searchResults = document.getElementById('searchResults');
+    const dropdownContainer = document.getElementById('dropdownContainer');
+    const btnModeAddress = document.getElementById('btnModeAddress');
+    const btnModePOI = document.getElementById('btnModePOI');
     const toast = document.getElementById('toast');
     const speedValEl = document.getElementById('speedVal');
     const speedLimitSignEl = document.getElementById('speedLimitSign');
@@ -659,13 +876,50 @@
     }
 
     /* ==========================================================
+       3D PERSPECTIVE CAMERA TOGGLE
+       ========================================================== */
+    btn3D.addEventListener('click', () => {
+      state.is3DMode = !state.is3DMode;
+      btn3D.classList.toggle('active', state.is3DMode);
+      label3D.textContent = state.is3DMode ? '2D' : '3D';
+
+      updateCameraPosition(true);
+      showToast(state.is3DMode ? 'Mode 3D Activé' : 'Mode 2D Activé');
+    });
+
+    function updateCameraPosition(animate = false) {
+      if (!state.userCoords) return;
+      const [lat, lon] = state.userCoords;
+      const effectiveHeading = state.userHeading !== null ? state.userHeading : (state.compassHeading || 0);
+
+      if (state.is3DMode) {
+        // Perspective 3D cockpit view
+        map.easeTo({
+          center: [lon, lat],
+          pitch: 60,
+          bearing: effectiveHeading,
+          zoom: Math.max(map.getZoom(), 17),
+          duration: animate ? 800 : 300
+        });
+      } else {
+        // Flat 2D North-up view
+        map.easeTo({
+          center: [lon, lat],
+          pitch: 0,
+          bearing: 0,
+          zoom: Math.max(map.getZoom(), 16),
+          duration: animate ? 800 : 300
+        });
+      }
+    }
+
+    /* ==========================================================
        SPEEDOMETER & SPEED LIMIT LOGIC
        ========================================================== */
     function updateSpeed(newSpeedKmh) {
       state.currentSpeedKmh = Math.max(0, Math.round(newSpeedKmh));
       speedValEl.textContent = state.currentSpeedKmh;
 
-      // Check Overspeed (> limit)
       if (state.currentSpeedKmh > state.speedLimitKmh) {
         speedLimitSignEl.classList.add('overspeed');
       } else {
@@ -682,32 +936,34 @@
     }
 
     /* ==========================================================
-       HEADING & COMPASS ORIENTATION (iOS & GPS)
+       HEADING & COMPASS ORIENTATION
        ========================================================== */
     function updateHeadingDisplay(headingDeg) {
       const beamEl = document.getElementById('userBeam');
       if (beamEl && headingDeg !== null && !isNaN(headingDeg)) {
         beamEl.style.display = 'block';
-        beamEl.style.transform = `rotate(${headingDeg}deg)`;
+        // If in 3D mode, the map rotates to bearing, so beam points relative to map bearing
+        const mapBearing = map.getBearing();
+        const relativeRotation = headingDeg - mapBearing;
+        beamEl.style.transform = `rotate(${relativeRotation}deg)`;
       }
     }
 
-    // Device Compass listener (especially for iOS Safari)
     function handleDeviceOrientation(e) {
       let compass = null;
       if (e.webkitCompassHeading !== undefined) {
-        // iOS Safari provides exact compass heading (0 = North)
         compass = e.webkitCompassHeading;
       } else if (e.alpha !== null) {
-        // Android fallback
         compass = 360 - e.alpha;
       }
 
       if (compass !== null) {
         state.compassHeading = compass;
-        // If stopped or walking slow (< 5 km/h), prefer compass
         if (state.currentSpeedKmh < 5 || state.userHeading === null) {
           updateHeadingDisplay(compass);
+          if (state.is3DMode && state.isAutoFollow) {
+            map.setBearing(compass);
+          }
         }
       }
     }
@@ -715,12 +971,11 @@
     function initCompassPermission() {
       if (typeof DeviceOrientationEvent !== 'undefined' && typeof DeviceOrientationEvent.requestPermission === 'function') {
         DeviceOrientationEvent.requestPermission()
-          .then((permissionState) => {
-            if (permissionState === 'granted') {
+          .then((p) => {
+            if (p === 'granted') {
               window.addEventListener('deviceorientation', handleDeviceOrientation, true);
             }
-          })
-          .catch(console.warn);
+          }).catch(console.warn);
       } else {
         window.addEventListener('deviceorientation', handleDeviceOrientation, true);
       }
@@ -735,16 +990,10 @@
         return;
       }
 
-      const geoOptions = {
-        enableHighAccuracy: true,
-        maximumAge: 0,
-        timeout: 10000
-      };
-
       state.watchId = navigator.geolocation.watchPosition(
         onLocationSuccess,
         onLocationError,
-        geoOptions
+        { enableHighAccuracy: true, maximumAge: 0, timeout: 10000 }
       );
     }
 
@@ -778,37 +1027,15 @@
         updateHeadingDisplay(state.compassHeading);
       }
 
-      // Create or update user position marker
-      if (!userMarker) {
-        userMarker = L.marker([latitude, longitude], {
-          icon: userMarkerIcon,
-          zIndexOffset: 1000
-        }).addTo(map);
+      // Update User Marker position
+      userMarker.setLngLat([longitude, latitude]).addTo(map);
 
-        userAccuracyCircle = L.circle([latitude, longitude], {
-          radius: accuracy || 10,
-          color: '#007AFF',
-          weight: 1,
-          opacity: 0.25,
-          fillColor: '#007AFF',
-          fillOpacity: 0.08
-        }).addTo(map);
-
-        map.setView([latitude, longitude], 16);
-      } else {
-        userMarker.setLatLng([latitude, longitude]);
-        if (userAccuracyCircle) {
-          userAccuracyCircle.setLatLng([latitude, longitude]);
-          userAccuracyCircle.setRadius(accuracy || 10);
-        }
-      }
-
-      // Auto-follow center
+      // Auto-follow Camera
       if (state.isAutoFollow) {
-        map.panTo([latitude, longitude], { animate: true, duration: 0.5 });
+        updateCameraPosition(false);
       }
 
-      // Active route tracking & dynamic radar distance check
+      // Dynamic Route Recalculation & Radar checks
       if (state.destination && prevCoords) {
         const distMoved = calculateDistance(prevCoords[0], prevCoords[1], latitude, longitude);
         if (distMoved > 30) {
@@ -840,27 +1067,36 @@
       state.isAutoFollow = true;
       btnRecenter.classList.add('active');
       if (state.userCoords) {
-        map.setView(state.userCoords, Math.max(map.getZoom(), 16), { animate: true });
+        updateCameraPosition(true);
       } else {
         showToast('Recherche de votre position GPS...');
       }
     });
 
     map.on('click', (e) => {
-      setDestination([e.latlng.lat, e.latlng.lng]);
+      const latlng = [e.lngLat.lat, e.lngLat.lng];
+      setDestination(latlng, 'Position sur la carte', 'Point sélectionné');
     });
 
-    function setDestination(latlng) {
+    function setDestination(latlng, title = 'Destination', subtitle = '') {
       state.destination = latlng;
+      const [lat, lon] = latlng;
 
-      if (destMarker) {
-        destMarker.setLatLng(latlng);
-      } else {
-        destMarker = L.marker(latlng, { icon: destMarkerIcon, zIndexOffset: 900 }).addTo(map);
-      }
+      destMarker.setLngLat([lon, lat]).addTo(map);
+
+      // Save to recent history
+      saveToHistory({
+        title: title,
+        subtitle: subtitle,
+        lat: lat,
+        lon: lon,
+        type: state.searchMode
+      });
+
+      closeDropdown();
 
       if (!state.userCoords) {
-        showToast('En attente du signal GPS pour tracer la route...');
+        showToast('En attente du signal GPS...');
         return;
       }
 
@@ -868,7 +1104,7 @@
     }
 
     /* ==========================================================
-       OSRM ROUTING & SPEED CAMERAS ON ROUTE
+       OSRM ROUTING & MAPLIBRE GEOJSON
        ========================================================== */
     async function calculateRoute(destCoords, fitBounds = true) {
       if (!state.userCoords) return;
@@ -889,34 +1125,20 @@
 
         const route = data.routes[0];
         state.activeRoute = route;
+        state.routeCoordinates = route.geometry.coordinates; // [[lon, lat], ...]
 
-        // Leaflet coordinates: [lat, lon]
-        state.routeCoordinates = route.geometry.coordinates.map(coord => [coord[1], coord[0]]);
-
-        // Infer road speed limit from route step or defaults
+        // Infer road speed limit
         inferSpeedLimitFromRoute(route);
 
-        // Clear existing route layers
-        if (routeBorderLayer) map.removeLayer(routeBorderLayer);
-        if (routeLineLayer) map.removeLayer(routeLineLayer);
-
-        // Outer contrast casing
-        routeBorderLayer = L.polyline(state.routeCoordinates, {
-          color: '#FFFFFF',
-          weight: 9,
-          opacity: 0.95,
-          lineJoin: 'round',
-          lineCap: 'round'
-        }).addTo(map);
-
-        // Distinct thick blue route line
-        routeLineLayer = L.polyline(state.routeCoordinates, {
-          color: '#0066FF',
-          weight: 6,
-          opacity: 1,
-          lineJoin: 'round',
-          lineCap: 'round'
-        }).addTo(map);
+        // Update GeoJSON route source in MapLibre
+        const routeSource = map.getSource('route');
+        if (routeSource) {
+          routeSource.setData({
+            type: 'Feature',
+            properties: {},
+            geometry: route.geometry
+          });
+        }
 
         // Update HUD
         const distanceKm = (route.distance / 1000).toFixed(route.distance < 10000 ? 1 : 0);
@@ -933,24 +1155,25 @@
 
         routeHud.classList.add('active');
 
-        if (fitBounds) {
-          const bounds = L.latLngBounds(state.routeCoordinates);
-          map.fitBounds(bounds, { padding: [80, 50], maxZoom: 17 });
+        if (fitBounds && !state.is3DMode) {
+          const bounds = new maplibregl.LngLatBounds();
+          state.routeCoordinates.forEach(c => bounds.extend(c));
+          map.fitBounds(bounds, { padding: { top: 120, bottom: 80, left: 60, right: 60 }, maxZoom: 17 });
           state.isAutoFollow = false;
           btnRecenter.classList.remove('active');
         }
 
-        // Fetch & display speed cameras ONLY on this active route
+        // Fetch & display speed cameras along route
         fetchSpeedCamerasOnRoute(state.routeCoordinates);
 
       } catch (err) {
-        console.error('OSRM fetch error:', err);
+        console.error('OSRM error:', err);
         showToast('Erreur lors du calcul de route');
       }
     }
 
     function inferSpeedLimitFromRoute(route) {
-      if (route.legs && route.legs[0] && route.legs[0].steps) {
+      if (route.legs && route.legs[0] && route.legs[0].steps && route.legs[0].steps.length) {
         const firstStep = route.legs[0].steps[0];
         const roadName = (firstStep.name || '').toLowerCase();
         const ref = (firstStep.ref || '').toLowerCase();
@@ -967,17 +1190,40 @@
       }
     }
 
+    function clearRoute() {
+      state.destination = null;
+      state.activeRoute = null;
+      state.routeCoordinates = [];
+
+      destMarker.remove();
+
+      const routeSource = map.getSource('route');
+      if (routeSource) {
+        routeSource.setData({
+          type: 'Feature',
+          properties: {},
+          geometry: { type: 'LineString', coordinates: [] }
+        });
+      }
+
+      clearRadarMarkers();
+      routeHud.classList.remove('active');
+      searchInput.value = '';
+      closeDropdown();
+      setSpeedLimit(50);
+    }
+
+    btnClearRoute.addEventListener('click', clearRoute);
+
     /* ==========================================================
-       SPEED CAMERAS: FETCH & FILTER ON ROUTE (OVERPASS API)
+       RADARS ON ROUTE (OVERPASS API)
        ========================================================== */
     async function fetchSpeedCamerasOnRoute(routeCoords) {
       clearRadarMarkers();
-
       if (!routeCoords || routeCoords.length < 2) return;
 
-      // Compute bounding box with 0.015 margin
       let minLat = 90, maxLat = -90, minLon = 180, maxLon = -180;
-      for (const [lat, lon] of routeCoords) {
+      for (const [lon, lat] of routeCoords) {
         if (lat < minLat) minLat = lat;
         if (lat > maxLat) maxLat = lat;
         if (lon < minLon) minLon = lon;
@@ -990,74 +1236,48 @@
       const query = `[out:json][timeout:8];(node["highway"="speed_camera"](${bbox});node["enforcement"="maxspeed"](${bbox}););out body;`;
 
       try {
-        const endpoints = [
-          'https://overpass-api.de/api/interpreter',
-          'https://lz4.overpass-api.de/api/interpreter'
-        ];
+        const params = new URLSearchParams();
+        params.append('data', query);
+        const res = await fetch('https://overpass-api.de/api/interpreter', {
+          method: 'POST',
+          body: params,
+          headers: { 'User-Agent': 'WakeGPS/1.0' }
+        });
+        const data = await res.json();
+        if (!data || !data.elements) return;
 
-        let data = null;
-        for (const ep of endpoints) {
-          try {
-            const params = new URLSearchParams();
-            params.append('data', query);
-            const res = await fetch(ep, {
-              method: 'POST',
-              body: params,
-              headers: { 'User-Agent': 'WakeGPS/1.0' }
-            });
-            if (res.ok) {
-              data = await res.json();
-              break;
-            }
-          } catch (e) {
-            console.warn('Endpoint failed:', ep, e);
-          }
-        }
-
-        if (!data || !data.elements || !data.elements.length) return;
-
-        // Filter radars strictly within 35 meters of the calculated route polyline
         state.routeRadars = [];
         for (const el of data.elements) {
           const camLat = el.lat;
           const camLon = el.lon;
-          const distToRoute = minDistanceToPolyline(camLat, camLon, routeCoords);
+          const distToRoute = minDistanceToRoute(camLat, camLon, routeCoords);
 
-          if (distToRoute <= 35) { // 35 meters corridor
+          if (distToRoute <= 35) {
             const speedLimit = el.tags?.maxspeed || el.tags?.['maxspeed:type'] || 'RADAR';
-            state.routeRadars.push({
-              lat: camLat,
-              lon: camLon,
-              maxspeed: speedLimit,
-              id: el.id
-            });
+            state.routeRadars.push({ lat: camLat, lon: camLon, maxspeed: speedLimit, id: el.id });
 
-            // Create minimalist radar pin on map
-            const radarIcon = L.divIcon({
-              className: 'radar-marker-pin',
-              html: `
-                <div class="radar-badge">
-                  <svg viewBox="0 0 24 24">
-                    <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-2h2v2zm0-4h-2V7h2v6z"/>
-                  </svg>
-                  <span>${speedLimit}</span>
-                </div>
-              `,
-              iconSize: [60, 24],
-              iconAnchor: [30, 24]
-            });
+            const radarEl = document.createElement('div');
+            radarEl.className = 'radar-marker-pin';
+            radarEl.innerHTML = `
+              <div class="radar-badge">
+                <svg viewBox="0 0 24 24"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-2h2v2zm0-4h-2V7h2v6z"/></svg>
+                <span>${speedLimit}</span>
+              </div>
+            `;
 
-            const marker = L.marker([camLat, camLon], { icon: radarIcon, zIndexOffset: 950 }).addTo(map);
-            state.radarMarkers.push(marker);
+            const m = new maplibregl.Marker({ element: radarEl, anchor: 'bottom' })
+              .setLngLat([camLon, camLat])
+              .addTo(map);
+
+            state.radarMarkers.push(m);
           }
         }
 
         if (state.routeRadars.length > 0) {
           showToast(`${state.routeRadars.length} radar(s) détecté(s) sur votre trajet`);
         }
-
       } catch (err) {
-        console.warn('Speed camera fetch error:', err);
+        console.warn('Radar fetch error:', err);
       }
     }
 
@@ -1078,12 +1298,9 @@
         }
       }
 
-      // If upcoming radar is within 600m
       if (closestRadar && minDistance <= 600) {
         hudRadarText.textContent = `Radar à ${Math.round(minDistance)}m (${closestRadar.maxspeed} km/h)`;
         hudRadarAlert.classList.add('active');
-
-        // Set speed limit sign to the radar speed limit if numeric
         if (closestRadar.maxspeed && !isNaN(closestRadar.maxspeed)) {
           setSpeedLimit(closestRadar.maxspeed);
         }
@@ -1093,50 +1310,307 @@
     }
 
     function clearRadarMarkers() {
-      for (const m of state.radarMarkers) {
-        map.removeLayer(m);
-      }
+      state.radarMarkers.forEach(m => m.remove());
       state.radarMarkers = [];
       state.routeRadars = [];
       hudRadarAlert.classList.remove('active');
     }
 
-    function clearRoute() {
-      state.destination = null;
-      state.activeRoute = null;
-      state.routeCoordinates = [];
+    /* ==========================================================
+       SEARCH MODE TOGGLE (ADRESSE vs POI)
+       ========================================================== */
+    btnModeAddress.addEventListener('click', () => {
+      state.searchMode = 'address';
+      btnModeAddress.classList.add('active');
+      btnModePOI.classList.remove('active');
+      searchInput.placeholder = "Rechercher une adresse...";
+      searchInput.focus();
+      triggerSearch();
+    });
 
-      if (destMarker) {
-        map.removeLayer(destMarker);
-        destMarker = null;
-      }
-      if (routeBorderLayer) {
-        map.removeLayer(routeBorderLayer);
-        routeBorderLayer = null;
-      }
-      if (routeLineLayer) {
-        map.removeLayer(routeLineLayer);
-        routeLineLayer = null;
-      }
-
-      clearRadarMarkers();
-      routeHud.classList.remove('active');
-      searchInput.value = '';
-      searchResults.classList.remove('active');
-      searchResults.innerHTML = '';
-      setSpeedLimit(50);
-    }
-
-    btnClearRoute.addEventListener('click', clearRoute);
+    btnModePOI.addEventListener('click', () => {
+      state.searchMode = 'poi';
+      btnModePOI.classList.add('active');
+      btnModeAddress.classList.remove('active');
+      searchInput.placeholder = "Chercher boulangerie, supermarché, cinéma...";
+      searchInput.focus();
+      triggerSearch();
+    });
 
     /* ==========================================================
-       GEOMETRIC UTILITY: POINT-TO-POLYLINE DISTANCE
+       SEARCH & RECENT HISTORY DROPDOWN
        ========================================================== */
-    function minDistanceToPolyline(pLat, pLon, polyCoords) {
+    let searchDebounce = null;
+
+    searchInput.addEventListener('focus', () => {
+      if (searchInput.value.trim() === '') {
+        renderHistory();
+      }
+    });
+
+    searchInput.addEventListener('input', () => {
+      triggerSearch();
+    });
+
+    function triggerSearch() {
+      const q = searchInput.value.trim();
+      clearTimeout(searchDebounce);
+
+      if (q === '') {
+        renderHistory();
+        return;
+      }
+
+      if (q.length < 2) {
+        closeDropdown();
+        return;
+      }
+
+      searchDebounce = setTimeout(() => {
+        if (state.searchMode === 'poi') {
+          searchPOI(q);
+        } else {
+          searchAddress(q);
+        }
+      }, 350);
+    }
+
+    function renderHistory() {
+      const history = getHistory();
+      if (!history.length) {
+        closeDropdown();
+        return;
+      }
+
+      let html = `
+        <div class="dropdown-header">
+          <span>Récents</span>
+          <button class="btn-clear-history" id="btnClearHistory">Effacer</button>
+        </div>
+      `;
+
+      html += history.map(item => {
+        let distText = '';
+        if (state.userCoords) {
+          const dMeters = calculateDistance(state.userCoords[0], state.userCoords[1], item.lat, item.lon);
+          distText = formatDistance(dMeters);
+        }
+        const icon = item.type === 'poi' ? '🏷️' : '📍';
+        return `
+          <div class="list-item" data-lat="${item.lat}" data-lon="${item.lon}" data-title="${escapeHtml(item.title)}" data-subtitle="${escapeHtml(item.subtitle)}">
+            <div class="list-item-icon">${icon}</div>
+            <div class="list-item-content">
+              <div class="list-item-title">${escapeHtml(item.title)}</div>
+              <div class="list-item-subtitle">${escapeHtml(item.subtitle || 'Position enregistrée')}</div>
+            </div>
+            ${distText ? `<div class="list-item-meta">${distText}</div>` : ''}
+          </div>
+        `;
+      }).join('');
+
+      dropdownContainer.innerHTML = html;
+      dropdownContainer.classList.add('active');
+
+      const btnClear = document.getElementById('btnClearHistory');
+      if (btnClear) {
+        btnClear.addEventListener('click', (e) => {
+          e.stopPropagation();
+          clearHistory();
+        });
+      }
+    }
+
+    /* Address Search (Nominatim) */
+    async function searchAddress(q) {
+      try {
+        let viewbox = '';
+        if (state.userCoords) {
+          const [lat, lon] = state.userCoords;
+          viewbox = `&viewbox=${lon-1},${lat+1},${lon+1},${lat-1}`;
+        }
+
+        const res = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(q)}${viewbox}&limit=5&addressdetails=1`);
+        const places = await res.json();
+
+        if (!places.length) {
+          dropdownContainer.innerHTML = '<div class="list-item" style="color:#8E8E93;">Aucune adresse trouvée</div>';
+          dropdownContainer.classList.add('active');
+          return;
+        }
+
+        dropdownContainer.innerHTML = places.map(p => {
+          const lat = parseFloat(p.lat);
+          const lon = parseFloat(p.lon);
+          const title = p.name || p.display_name.split(',')[0];
+          let distText = '';
+          if (state.userCoords) {
+            distText = formatDistance(calculateDistance(state.userCoords[0], state.userCoords[1], lat, lon));
+          }
+          return `
+            <div class="list-item" data-lat="${lat}" data-lon="${lon}" data-title="${escapeHtml(title)}" data-subtitle="${escapeHtml(p.display_name)}">
+              <div class="list-item-icon">📍</div>
+              <div class="list-item-content">
+                <div class="list-item-title">${escapeHtml(title)}</div>
+                <div class="list-item-subtitle">${escapeHtml(p.display_name)}</div>
+              </div>
+              ${distText ? `<div class="list-item-meta">${distText}</div>` : ''}
+            </div>
+          `;
+        }).join('');
+
+        dropdownContainer.classList.add('active');
+      } catch (err) {
+        console.error('Address search error:', err);
+      }
+    }
+
+    /* POI Flexible Search (Overpass API) */
+    async function searchPOI(q) {
+      if (!state.userCoords) {
+        showToast('Localisation requise pour chercher des POI');
+        return;
+      }
+
+      const [userLat, userLon] = state.userCoords;
+      const lower = q.toLowerCase();
+
+      // Semantic mapping for common POI categories
+      let filterTag = '';
+      if (lower.includes('boulangerie') || lower.includes('pain')) {
+        filterTag = '["shop"="bakery"]';
+      } else if (lower.includes('supermarché') || lower.includes('supermarche') || lower.includes('course') || lower.includes('epicerie')) {
+        filterTag = '["shop"~"supermarket|convenience|grocery"]';
+      } else if (lower.includes('cinema') || lower.includes('cinéma')) {
+        filterTag = '["amenity"="cinema"]';
+      } else if (lower.includes('pharmacie')) {
+        filterTag = '["amenity"="pharmacy"]';
+      } else if (lower.includes('essence') || lower.includes('carburant') || lower.includes('station')) {
+        filterTag = '["amenity"="fuel"]';
+      } else if (lower.includes('resto') || lower.includes('restaurant') || lower.includes('manger')) {
+        filterTag = '["amenity"="restaurant"]';
+      } else if (lower.includes('café') || lower.includes('cafe') || lower.includes('bar') || lower.includes('pub')) {
+        filterTag = '["amenity"~"cafe|bar|pub"]';
+      } else if (lower.includes('parking')) {
+        filterTag = '["amenity"="parking"]';
+      } else if (lower.includes('banque') || lower.includes('distributeur') || lower.includes('dab')) {
+        filterTag = '["amenity"~"bank|atm"]';
+      } else if (lower.includes('fast food') || lower.includes('burger') || lower.includes('pizza')) {
+        filterTag = '["amenity"="fast_food"]';
+      } else if (lower.includes('hopital') || lower.includes('hôpital') || lower.includes('docteur') || lower.includes('medecin')) {
+        filterTag = '["amenity"~"hospital|clinic|doctors"]';
+      } else {
+        // Generic regex match on name or tag
+        filterTag = `["name"~"${escapeOverpass(q)}",i]`;
+      }
+
+      const radius = 5000; // 5 km radius
+      const query = `[out:json][timeout:8];(
+        node${filterTag}(around:${radius},${userLat},${userLon});
+        way${filterTag}(around:${radius},${userLat},${userLon});
+      );out center 25;`;
+
+      try {
+        const params = new URLSearchParams();
+        params.append('data', query);
+
+        const res = await fetch('https://overpass-api.de/api/interpreter', {
+          method: 'POST',
+          body: params,
+          headers: { 'User-Agent': 'WakeGPS/1.0' }
+        });
+
+        const data = await res.json();
+        if (!data || !data.elements || !data.elements.length) {
+          dropdownContainer.innerHTML = '<div class="list-item" style="color:#8E8E93;">Aucun POI trouvé à proximité</div>';
+          dropdownContainer.classList.add('active');
+          return;
+        }
+
+        // Calculate distance and sort closest first
+        const poiList = data.elements.map(el => {
+          const lat = el.lat || el.center?.lat;
+          const lon = el.lon || el.center?.lon;
+          const name = el.tags?.name || getGenericPOIName(el.tags) || q;
+          const street = [el.tags?.['addr:housenumber'], el.tags?.['addr:street'], el.tags?.['addr:city']].filter(Boolean).join(' ');
+          const dMeters = calculateDistance(userLat, userLon, lat, lon);
+          return { name, street: street || el.tags?.brand || 'Point d\'intérêt', lat, lon, dMeters };
+        }).filter(p => p.lat && p.lon);
+
+        poiList.sort((a, b) => a.dMeters - b.dMeters);
+
+        dropdownContainer.innerHTML = poiList.slice(0, 10).map(poi => `
+          <div class="list-item" data-lat="${poi.lat}" data-lon="${poi.lon}" data-title="${escapeHtml(poi.name)}" data-subtitle="${escapeHtml(poi.street)}">
+            <div class="list-item-icon">🏷️</div>
+            <div class="list-item-content">
+              <div class="list-item-title">${escapeHtml(poi.name)}</div>
+              <div class="list-item-subtitle">${escapeHtml(poi.street)}</div>
+            </div>
+            <div class="list-item-meta">${formatDistance(poi.dMeters)}</div>
+          </div>
+        `).join('');
+
+        dropdownContainer.classList.add('active');
+      } catch (err) {
+        console.error('POI search error:', err);
+      }
+    }
+
+    function getGenericPOIName(tags) {
+      if (!tags) return null;
+      if (tags.shop === 'bakery') return 'Boulangerie';
+      if (tags.shop === 'supermarket') return 'Supermarché';
+      if (tags.amenity === 'pharmacy') return 'Pharmacie';
+      if (tags.amenity === 'cinema') return 'Cinéma';
+      if (tags.amenity === 'fuel') return 'Station Service';
+      if (tags.amenity === 'restaurant') return 'Restaurant';
+      if (tags.amenity === 'cafe') return 'Café';
+      if (tags.amenity === 'parking') return 'Parking';
+      return null;
+    }
+
+    function escapeOverpass(str) {
+      return str.replace(/["\\]/g, '\\$&');
+    }
+
+    dropdownContainer.addEventListener('click', (e) => {
+      const item = e.target.closest('.list-item');
+      if (!item || !item.dataset.lat) return;
+
+      const lat = parseFloat(item.dataset.lat);
+      const lon = parseFloat(item.dataset.lon);
+      const title = item.dataset.title || 'Destination';
+      const subtitle = item.dataset.subtitle || '';
+
+      searchInput.value = title;
+      setDestination([lat, lon], title, subtitle);
+    });
+
+    function closeDropdown() {
+      dropdownContainer.classList.remove('active');
+      dropdownContainer.innerHTML = '';
+    }
+
+    document.addEventListener('click', (e) => {
+      if (!e.target.closest('.top-container')) {
+        closeDropdown();
+      }
+    });
+
+    /* ==========================================================
+       GEOMETRIC & DISTANCE UTILITIES
+       ========================================================== */
+    function formatDistance(meters) {
+      if (meters < 1000) {
+        return `${Math.round(meters)} m`;
+      }
+      return `${(meters / 1000).toFixed(1)} km`;
+    }
+
+    function minDistanceToRoute(pLat, pLon, routeCoords) {
       let minDist = Infinity;
-      for (let i = 0; i < polyCoords.length - 1; i++) {
-        const [aLat, aLon] = polyCoords[i];
-        const [bLat, bLon] = polyCoords[i + 1];
+      for (let i = 0; i < routeCoords.length - 1; i++) {
+        const [aLon, aLat] = routeCoords[i];
+        const [bLon, bLat] = routeCoords[i + 1];
         const dist = distToSegment(pLat, pLon, aLat, aLon, bLat, bLon);
         if (dist < minDist) minDist = dist;
       }
@@ -1144,18 +1618,13 @@
     }
 
     function distToSegment(pLat, pLon, aLat, aLon, bLat, bLon) {
-      // Approximate flat coordinate projection in meters for fast distance
       const x = (pLon - aLon) * Math.cos((aLat + bLat) * Math.PI / 360) * 111320;
       const y = (pLat - aLat) * 110540;
       const dx = (bLon - aLon) * Math.cos((aLat + bLat) * Math.PI / 360) * 111320;
       const dy = (bLat - aLat) * 110540;
-
       const lenSq = dx * dx + dy * dy;
       if (lenSq === 0) return Math.sqrt(x * x + y * y);
-
-      let t = (x * dx + y * dy) / lenSq;
-      t = Math.max(0, Math.min(1, t));
-
+      let t = Math.max(0, Math.min(1, (x * dx + y * dy) / lenSq));
       const projX = t * dx;
       const projY = t * dy;
       return Math.sqrt((x - projX) * (x - projX) + (y - projY) * (y - projY));
@@ -1170,116 +1639,49 @@
       const a = Math.sin(Δφ/2) * Math.sin(Δφ/2) +
                 Math.cos(φ1) * Math.cos(φ2) *
                 Math.sin(Δλ/2) * Math.sin(Δλ/2);
-      const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
-      return R * c;
+      return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
     }
-
-    /* ==========================================================
-       NOMINATIM SEARCH
-       ========================================================== */
-    let searchDebounce = null;
-
-    searchInput.addEventListener('input', (e) => {
-      const q = e.target.value.trim();
-      clearTimeout(searchDebounce);
-
-      if (q.length < 3) {
-        searchResults.classList.remove('active');
-        searchResults.innerHTML = '';
-        return;
-      }
-
-      searchDebounce = setTimeout(async () => {
-        try {
-          let viewboxParam = '';
-          if (state.userCoords) {
-            const [lat, lon] = state.userCoords;
-            viewboxParam = `&viewbox=${lon-1},${lat+1},${lon+1},${lat-1}`;
-          }
-
-          const res = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(q)}${viewboxParam}&limit=4&addressdetails=1`);
-          const places = await res.json();
-
-          if (!places.length) {
-            searchResults.innerHTML = '<div class="search-item" style="color:#8E8E93;">Aucun résultat trouvé</div>';
-            searchResults.classList.add('active');
-            return;
-          }
-
-          searchResults.innerHTML = places.map(p => `
-            <div class="search-item" data-lat="${p.lat}" data-lon="${p.lon}">
-              <strong>${escapeHtml(p.name || p.display_name.split(',')[0])}</strong><br/>
-              <span style="font-size:12px; color:#8E8E93;">${escapeHtml(p.display_name)}</span>
-            </div>
-          `).join('');
-
-          searchResults.classList.add('active');
-        } catch (err) {
-          console.error('Search error:', err);
-        }
-      }, 350);
-    });
-
-    searchResults.addEventListener('click', (e) => {
-      const item = e.target.closest('.search-item');
-      if (!item || !item.dataset.lat) return;
-
-      const lat = parseFloat(item.dataset.lat);
-      const lon = parseFloat(item.dataset.lon);
-
-      searchInput.value = item.querySelector('strong').textContent;
-      searchResults.classList.remove('active');
-      searchResults.innerHTML = '';
-
-      setDestination([lat, lon]);
-    });
 
     function escapeHtml(text) {
       const div = document.createElement('div');
-      div.textContent = text;
+      div.textContent = text || '';
       return div.innerHTML;
     }
 
     /* ==========================================================
-       WAKE LOCK API & INTERACTION TRIGGERS
+       WAKE LOCK & PERMISSION TRIGGERS
        ========================================================== */
     async function requestWakeLock() {
       if ('wakeLock' in navigator) {
         try {
           state.wakeLock = await navigator.wakeLock.request('screen');
-          state.wakeLock.addEventListener('release', () => {
-            state.wakeLock = null;
-          });
-        } catch (err) {
-          console.warn('Wake Lock error:', err.message);
+        } catch (e) {
+          console.warn('WakeLock error:', e);
         }
       }
     }
 
-    document.addEventListener('visibilitychange', async () => {
-      if (document.visibilityState === 'visible') {
-        await requestWakeLock();
-      }
+    document.addEventListener('visibilitychange', () => {
+      if (document.visibilityState === 'visible') requestWakeLock();
     });
 
-    // Request compass and wake lock on first touch/click
     window.addEventListener('click', () => {
       if (!state.wakeLock) requestWakeLock();
       initCompassPermission();
     }, { once: true });
 
     /* ==========================================================
-       PWA SERVICE WORKER REGISTRATION
+       SERVICE WORKER REGISTRATION
        ========================================================== */
     if ('serviceWorker' in navigator) {
       window.addEventListener('load', () => {
         navigator.serviceWorker.register('./sw.js')
-          .then((reg) => console.log('ServiceWorker registered:', reg.scope))
-          .catch((err) => console.warn('ServiceWorker registration failed:', err));
+          .then((reg) => console.log('SW registered:', reg.scope))
+          .catch((err) => console.warn('SW error:', err));
       });
     }
 
-    // Start GPS immediately
+    // Launch GPS immediately
     initGPS();
   </script>
 </body>
