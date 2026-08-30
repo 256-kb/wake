@@ -952,10 +952,20 @@
         return;
       }
 
+      const geoOptions = { enableHighAccuracy: true, maximumAge: 0, timeout: 10000 };
+
+      // Immediate first fix
+      navigator.geolocation.getCurrentPosition(
+        onLocationSuccess,
+        (err) => console.warn('Fast GPS fix:', err.message),
+        { enableHighAccuracy: true, timeout: 5000 }
+      );
+
+      // Continuous tracking
       state.watchId = navigator.geolocation.watchPosition(
         onLocationSuccess,
         onLocationError,
-        { enableHighAccuracy: true, maximumAge: 0, timeout: 10000 }
+        geoOptions
       );
     }
 
@@ -1357,93 +1367,116 @@
       }
     }
 
-    /* Unified Search: Queries both Nominatim and Overpass POI simultaneously */
+    /* ==========================================================
+       LOCAL SEARCH (POI & ADDRESS STRICTLY AROUND USER POINT)
+       ========================================================== */
+    function getSearchAnchor() {
+      if (state.userCoords && state.userCoords[0] && state.userCoords[1]) {
+        return state.userCoords;
+      }
+      const c = map.getCenter();
+      return [c.lat, c.lng];
+    }
+
     async function searchUnified(q) {
       const lower = q.toLowerCase();
-      const userCoords = state.userCoords;
+      const [anchorLat, anchorLon] = getSearchAnchor();
 
-      // Detect if query looks like a POI / generic service
-      let poiFilter = getPOITagFilter(lower);
+      const poiFilter = getPOITagFilter(lower);
       const isPoiQuery = poiFilter !== null;
+
+      dropdownContainer.innerHTML = '<div class="list-item" style="color:#8E8E93;"><div class="list-item-icon">⏳</div><div class="list-item-content"><div class="list-item-title">Recherche autour de vous...</div></div></div>';
+      dropdownContainer.classList.add('active');
 
       const promises = [];
 
-      // 1. Nominatim address search
-      let viewbox = '';
-      if (userCoords) {
-        const [lat, lon] = userCoords;
-        viewbox = `&viewbox=${lon-1},${lat+1},${lon+1},${lat-1}`;
-      }
+      // 1. Nominatim address search biased strictly around user anchor
+      const delta = isPoiQuery ? 0.15 : 0.35;
+      const viewbox = `${anchorLon - delta},${anchorLat + delta},${anchorLon + delta},${anchorLat - delta}`;
+      const nomUrl = `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(q)}&viewbox=${viewbox}&bounded=${isPoiQuery ? '1' : '0'}&limit=8&addressdetails=1`;
+      
       promises.push(
-        fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(q)}${viewbox}&limit=5&addressdetails=1`)
+        fetch(nomUrl, { headers: { 'User-Agent': 'WakeGPS/1.0' } })
           .then(r => r.json())
           .catch(() => [])
       );
 
-      // 2. Overpass POI search (if user location available)
-      if (userCoords) {
-        const [userLat, userLon] = userCoords;
-        if (!poiFilter) {
-          poiFilter = `["name"~"${escapeOverpass(q)}",i]`;
-        }
-        const query = `[out:json][timeout:6];(
-          node${poiFilter}(around:6000,${userLat},${userLon});
-          way${poiFilter}(around:6000,${userLat},${userLon});
-        );out center 15;`;
-
-        const params = new URLSearchParams();
-        params.append('data', query);
-        promises.push(
-          fetch('https://overpass-api.de/api/interpreter', {
-            method: 'POST',
-            body: params,
-            headers: { 'User-Agent': 'WakeGPS/1.0' }
-          })
-          .then(r => r.json())
-          .then(d => d.elements || [])
-          .catch(() => [])
-        );
+      // 2. Overpass POI search (Around anchor point)
+      let effectiveFilter = poiFilter;
+      if (!effectiveFilter) {
+        effectiveFilter = `["name"~"${escapeOverpass(q)}",i]`;
       }
+
+      const radiusMeters = 5000; // 5 km around user
+      const overpassQuery = `[out:json][timeout:6];(
+        node${effectiveFilter}(around:${radiusMeters},${anchorLat.toFixed(5)},${anchorLon.toFixed(5)});
+        way${effectiveFilter}(around:${radiusMeters},${anchorLat.toFixed(5)},${anchorLon.toFixed(5)});
+      );out center 15;`;
+
+      const params = new URLSearchParams();
+      params.append('data', overpassQuery);
+
+      const overpassEndpoints = [
+        'https://overpass-api.de/api/interpreter',
+        'https://lz4.overpass-api.de/api/interpreter'
+      ];
+
+      const fetchOverpassWithFallback = async () => {
+        for (const ep of overpassEndpoints) {
+          try {
+            const res = await fetch(ep, {
+              method: 'POST',
+              body: params,
+              headers: { 'User-Agent': 'WakeGPS/1.0' }
+            });
+            if (res.ok) {
+              const data = await res.json();
+              if (data && data.elements) return data.elements;
+            }
+          } catch (e) {
+            console.warn('Overpass mirror failed:', ep);
+          }
+        }
+        return [];
+      };
+
+      promises.push(fetchOverpassWithFallback());
 
       try {
         const results = await Promise.all(promises);
         const addressResults = Array.isArray(results[0]) ? results[0] : [];
-        const poiResults = results.length > 1 && Array.isArray(results[1]) ? results[1] : [];
+        const poiResults = Array.isArray(results[1]) ? results[1] : [];
 
         let combined = [];
 
-        // Format POIs
-        if (userCoords && poiResults.length > 0) {
-          const [uLat, uLon] = userCoords;
-          poiResults.forEach(el => {
-            const lat = el.lat || el.center?.lat;
-            const lon = el.lon || el.center?.lon;
-            if (!lat || !lon) return;
-            const name = el.tags?.name || getGenericPOIName(el.tags) || q;
-            const street = [el.tags?.['addr:housenumber'], el.tags?.['addr:street'], el.tags?.['addr:city']].filter(Boolean).join(' ') || el.tags?.brand || 'Point d\'intérêt';
-            const dMeters = calculateDistance(uLat, uLon, lat, lon);
-            combined.push({
-              title: name,
-              subtitle: street,
-              lat: lat,
-              lon: lon,
-              type: 'poi',
-              dMeters: dMeters
-            });
-          });
-        }
+        // Format POIs (from Overpass)
+        poiResults.forEach(el => {
+          const lat = el.lat || el.center?.lat;
+          const lon = el.lon || el.center?.lon;
+          if (!lat || !lon) return;
+          const name = el.tags?.name || getGenericPOIName(el.tags) || q;
+          const street = [el.tags?.['addr:housenumber'], el.tags?.['addr:street'], el.tags?.['addr:city']].filter(Boolean).join(' ') || el.tags?.brand || 'Point d\'intérêt local';
+          const dMeters = calculateDistance(anchorLat, anchorLon, lat, lon);
 
-        // Format Addresses
+          combined.push({
+            title: name,
+            subtitle: street,
+            lat: lat,
+            lon: lon,
+            type: 'poi',
+            dMeters: dMeters
+          });
+        });
+
+        // Format Addresses (from Nominatim)
         addressResults.forEach(p => {
           const lat = parseFloat(p.lat);
           const lon = parseFloat(p.lon);
+          if (isNaN(lat) || isNaN(lon)) return;
           const title = p.name || p.display_name.split(',')[0];
-          let dMeters = Infinity;
-          if (userCoords) {
-            dMeters = calculateDistance(userCoords[0], userCoords[1], lat, lon);
-          }
-          // Avoid duplicate coordinates
-          const isDuplicate = combined.some(c => Math.abs(c.lat - lat) < 0.0002 && Math.abs(c.lon - lon) < 0.0002);
+          const dMeters = calculateDistance(anchorLat, anchorLon, lat, lon);
+
+          const isDuplicate = combined.some(c => Math.abs(c.lat - lat) < 0.0003 && Math.abs(c.lon - lon) < 0.0003);
           if (!isDuplicate) {
             combined.push({
               title: title,
@@ -1457,21 +1490,18 @@
         });
 
         if (!combined.length) {
-          dropdownContainer.innerHTML = '<div class="list-item" style="color:#8E8E93;">Aucun résultat trouvé</div>';
+          dropdownContainer.innerHTML = '<div class="list-item" style="color:#8E8E93;"><div class="list-item-icon">📍</div><div class="list-item-content"><div class="list-item-title">Aucun résultat trouvé autour de vous</div></div></div>';
           dropdownContainer.classList.add('active');
           return;
         }
 
-        // If POI query, sort POIs first by distance
-        if (isPoiQuery) {
-          combined.sort((a, b) => a.dMeters - b.dMeters);
-        } else {
-          // Keep address ranking, with nearby matches boosted
-          combined.sort((a, b) => {
-            if (a.type === 'address' && b.type === 'poi') return -1;
-            if (a.type === 'poi' && b.type === 'address') return 1;
-            return a.dMeters - b.dMeters;
-          });
+        // STRICT SORTING: Closest to furthest from user's current point
+        combined.sort((a, b) => a.dMeters - b.dMeters);
+
+        // If local results exist (< 25km), filter out far away places (e.g. Paris when in another city)
+        const hasLocal = combined.some(c => c.dMeters < 25000);
+        if (hasLocal) {
+          combined = combined.filter(c => c.dMeters < 35000);
         }
 
         dropdownContainer.innerHTML = combined.slice(0, 10).map(item => {
@@ -1492,7 +1522,7 @@
         dropdownContainer.classList.add('active');
 
       } catch (err) {
-        console.error('Unified search error:', err);
+        console.error('Search error:', err);
       }
     }
 
