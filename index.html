@@ -221,37 +221,6 @@
       color: #8E8E93;
     }
 
-    /* Mode Switcher Segmented Control (Adresse / POI) */
-    .mode-switch {
-      display: flex;
-      background: rgba(118, 118, 128, 0.12);
-      border-radius: 10px;
-      padding: 2px;
-      gap: 2px;
-      flex-shrink: 0;
-    }
-
-    .mode-btn {
-      border: none;
-      background: transparent;
-      padding: 4px 10px;
-      border-radius: 8px;
-      font-size: 12px;
-      font-weight: 600;
-      color: #8E8E93;
-      cursor: pointer;
-      transition: all 0.2s ease;
-      display: flex;
-      align-items: center;
-      gap: 4px;
-    }
-
-    .mode-btn.active {
-      background: #FFFFFF;
-      color: var(--primary);
-      box-shadow: 0 1px 4px rgba(0, 0, 0, 0.12);
-    }
-
     /* Route HUD Info Banner */
     .route-hud {
       pointer-events: auto;
@@ -618,13 +587,7 @@
             <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
           </svg>
         </div>
-        <input type="text" id="searchInput" placeholder="Rechercher une adresse..." autocomplete="off" />
-        
-        <!-- Mode Switcher (Adresse vs POI) -->
-        <div class="mode-switch">
-          <button class="mode-btn active" id="btnModeAddress" title="Recherche d'adresse">Adresse</button>
-          <button class="mode-btn" id="btnModePOI" title="Points d'intérêt (boulangerie, supermarché...)">POI</button>
-        </div>
+        <input type="text" id="searchInput" placeholder="Adresse ou lieu (boulangerie, cinéma...)" autocomplete="off" />
       </div>
     </div>
 
@@ -837,7 +800,9 @@
 
     const userMarker = new maplibregl.Marker({
       element: userMarkerEl,
-      anchor: 'center'
+      anchor: 'center',
+      pitchAlignment: 'map',
+      rotationAlignment: 'map'
     });
 
     // Destination Marker DOM Element
@@ -845,7 +810,9 @@
     destMarkerEl.innerHTML = '<div class="dest-dot"></div>';
     const destMarker = new maplibregl.Marker({
       element: destMarkerEl,
-      anchor: 'center'
+      anchor: 'center',
+      pitchAlignment: 'map',
+      rotationAlignment: 'map'
     });
 
     /* ==========================================================
@@ -862,8 +829,6 @@
     const label3D = document.getElementById('label3D');
     const searchInput = document.getElementById('searchInput');
     const dropdownContainer = document.getElementById('dropdownContainer');
-    const btnModeAddress = document.getElementById('btnModeAddress');
-    const btnModePOI = document.getElementById('btnModePOI');
     const toast = document.getElementById('toast');
     const speedValEl = document.getElementById('speedVal');
     const speedLimitSignEl = document.getElementById('speedLimitSign');
@@ -936,16 +901,13 @@
     }
 
     /* ==========================================================
-       HEADING & COMPASS ORIENTATION
+       HEADING & COMPASS ORIENTATION (ALIGNED IN 3D GROUND PLANE)
        ========================================================== */
     function updateHeadingDisplay(headingDeg) {
       const beamEl = document.getElementById('userBeam');
       if (beamEl && headingDeg !== null && !isNaN(headingDeg)) {
         beamEl.style.display = 'block';
-        // If in 3D mode, the map rotates to bearing, so beam points relative to map bearing
-        const mapBearing = map.getBearing();
-        const relativeRotation = headingDeg - mapBearing;
-        beamEl.style.transform = `rotate(${relativeRotation}deg)`;
+        beamEl.style.transform = `rotate(${headingDeg}deg)`;
       }
     }
 
@@ -1317,28 +1279,7 @@
     }
 
     /* ==========================================================
-       SEARCH MODE TOGGLE (ADRESSE vs POI)
-       ========================================================== */
-    btnModeAddress.addEventListener('click', () => {
-      state.searchMode = 'address';
-      btnModeAddress.classList.add('active');
-      btnModePOI.classList.remove('active');
-      searchInput.placeholder = "Rechercher une adresse...";
-      searchInput.focus();
-      triggerSearch();
-    });
-
-    btnModePOI.addEventListener('click', () => {
-      state.searchMode = 'poi';
-      btnModePOI.classList.add('active');
-      btnModeAddress.classList.remove('active');
-      searchInput.placeholder = "Chercher boulangerie, supermarché, cinéma...";
-      searchInput.focus();
-      triggerSearch();
-    });
-
-    /* ==========================================================
-       SEARCH & RECENT HISTORY DROPDOWN
+       SEARCH & RECENT HISTORY DROPDOWN (UNIFIED ADRESSE & POI)
        ========================================================== */
     let searchDebounce = null;
 
@@ -1367,12 +1308,8 @@
       }
 
       searchDebounce = setTimeout(() => {
-        if (state.searchMode === 'poi') {
-          searchPOI(q);
-        } else {
-          searchAddress(q);
-        }
-      }, 350);
+        searchUnified(q);
+      }, 300);
     }
 
     function renderHistory() {
@@ -1420,139 +1357,180 @@
       }
     }
 
-    /* Address Search (Nominatim) */
-    async function searchAddress(q) {
+    /* Unified Search: Queries both Nominatim and Overpass POI simultaneously */
+    async function searchUnified(q) {
+      const lower = q.toLowerCase();
+      const userCoords = state.userCoords;
+
+      // Detect if query looks like a POI / generic service
+      let poiFilter = getPOITagFilter(lower);
+      const isPoiQuery = poiFilter !== null;
+
+      const promises = [];
+
+      // 1. Nominatim address search
+      let viewbox = '';
+      if (userCoords) {
+        const [lat, lon] = userCoords;
+        viewbox = `&viewbox=${lon-1},${lat+1},${lon+1},${lat-1}`;
+      }
+      promises.push(
+        fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(q)}${viewbox}&limit=5&addressdetails=1`)
+          .then(r => r.json())
+          .catch(() => [])
+      );
+
+      // 2. Overpass POI search (if user location available)
+      if (userCoords) {
+        const [userLat, userLon] = userCoords;
+        if (!poiFilter) {
+          poiFilter = `["name"~"${escapeOverpass(q)}",i]`;
+        }
+        const query = `[out:json][timeout:6];(
+          node${poiFilter}(around:6000,${userLat},${userLon});
+          way${poiFilter}(around:6000,${userLat},${userLon});
+        );out center 15;`;
+
+        const params = new URLSearchParams();
+        params.append('data', query);
+        promises.push(
+          fetch('https://overpass-api.de/api/interpreter', {
+            method: 'POST',
+            body: params,
+            headers: { 'User-Agent': 'WakeGPS/1.0' }
+          })
+          .then(r => r.json())
+          .then(d => d.elements || [])
+          .catch(() => [])
+        );
+      }
+
       try {
-        let viewbox = '';
-        if (state.userCoords) {
-          const [lat, lon] = state.userCoords;
-          viewbox = `&viewbox=${lon-1},${lat+1},${lon+1},${lat-1}`;
+        const results = await Promise.all(promises);
+        const addressResults = Array.isArray(results[0]) ? results[0] : [];
+        const poiResults = results.length > 1 && Array.isArray(results[1]) ? results[1] : [];
+
+        let combined = [];
+
+        // Format POIs
+        if (userCoords && poiResults.length > 0) {
+          const [uLat, uLon] = userCoords;
+          poiResults.forEach(el => {
+            const lat = el.lat || el.center?.lat;
+            const lon = el.lon || el.center?.lon;
+            if (!lat || !lon) return;
+            const name = el.tags?.name || getGenericPOIName(el.tags) || q;
+            const street = [el.tags?.['addr:housenumber'], el.tags?.['addr:street'], el.tags?.['addr:city']].filter(Boolean).join(' ') || el.tags?.brand || 'Point d\'intérêt';
+            const dMeters = calculateDistance(uLat, uLon, lat, lon);
+            combined.push({
+              title: name,
+              subtitle: street,
+              lat: lat,
+              lon: lon,
+              type: 'poi',
+              dMeters: dMeters
+            });
+          });
         }
 
-        const res = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(q)}${viewbox}&limit=5&addressdetails=1`);
-        const places = await res.json();
+        // Format Addresses
+        addressResults.forEach(p => {
+          const lat = parseFloat(p.lat);
+          const lon = parseFloat(p.lon);
+          const title = p.name || p.display_name.split(',')[0];
+          let dMeters = Infinity;
+          if (userCoords) {
+            dMeters = calculateDistance(userCoords[0], userCoords[1], lat, lon);
+          }
+          // Avoid duplicate coordinates
+          const isDuplicate = combined.some(c => Math.abs(c.lat - lat) < 0.0002 && Math.abs(c.lon - lon) < 0.0002);
+          if (!isDuplicate) {
+            combined.push({
+              title: title,
+              subtitle: p.display_name,
+              lat: lat,
+              lon: lon,
+              type: 'address',
+              dMeters: dMeters
+            });
+          }
+        });
 
-        if (!places.length) {
-          dropdownContainer.innerHTML = '<div class="list-item" style="color:#8E8E93;">Aucune adresse trouvée</div>';
+        if (!combined.length) {
+          dropdownContainer.innerHTML = '<div class="list-item" style="color:#8E8E93;">Aucun résultat trouvé</div>';
           dropdownContainer.classList.add('active');
           return;
         }
 
-        dropdownContainer.innerHTML = places.map(p => {
-          const lat = parseFloat(p.lat);
-          const lon = parseFloat(p.lon);
-          const title = p.name || p.display_name.split(',')[0];
-          let distText = '';
-          if (state.userCoords) {
-            distText = formatDistance(calculateDistance(state.userCoords[0], state.userCoords[1], lat, lon));
-          }
+        // If POI query, sort POIs first by distance
+        if (isPoiQuery) {
+          combined.sort((a, b) => a.dMeters - b.dMeters);
+        } else {
+          // Keep address ranking, with nearby matches boosted
+          combined.sort((a, b) => {
+            if (a.type === 'address' && b.type === 'poi') return -1;
+            if (a.type === 'poi' && b.type === 'address') return 1;
+            return a.dMeters - b.dMeters;
+          });
+        }
+
+        dropdownContainer.innerHTML = combined.slice(0, 10).map(item => {
+          const icon = item.type === 'poi' ? '🏷️' : '📍';
+          const distStr = item.dMeters < Infinity ? formatDistance(item.dMeters) : '';
           return `
-            <div class="list-item" data-lat="${lat}" data-lon="${lon}" data-title="${escapeHtml(title)}" data-subtitle="${escapeHtml(p.display_name)}">
-              <div class="list-item-icon">📍</div>
+            <div class="list-item" data-lat="${item.lat}" data-lon="${item.lon}" data-title="${escapeHtml(item.title)}" data-subtitle="${escapeHtml(item.subtitle)}">
+              <div class="list-item-icon">${icon}</div>
               <div class="list-item-content">
-                <div class="list-item-title">${escapeHtml(title)}</div>
-                <div class="list-item-subtitle">${escapeHtml(p.display_name)}</div>
+                <div class="list-item-title">${escapeHtml(item.title)}</div>
+                <div class="list-item-subtitle">${escapeHtml(item.subtitle)}</div>
               </div>
-              ${distText ? `<div class="list-item-meta">${distText}</div>` : ''}
+              ${distStr ? `<div class="list-item-meta">${distStr}</div>` : ''}
             </div>
           `;
         }).join('');
 
         dropdownContainer.classList.add('active');
+
       } catch (err) {
-        console.error('Address search error:', err);
+        console.error('Unified search error:', err);
       }
     }
 
-    /* POI Flexible Search (Overpass API) */
-    async function searchPOI(q) {
-      if (!state.userCoords) {
-        showToast('Localisation requise pour chercher des POI');
-        return;
+    function getPOITagFilter(lower) {
+      if (lower.includes('boulangerie') || lower.includes('pain') || lower.includes('croissant') || lower.includes('baguette')) {
+        return '["shop"="bakery"]';
       }
-
-      const [userLat, userLon] = state.userCoords;
-      const lower = q.toLowerCase();
-
-      // Semantic mapping for common POI categories
-      let filterTag = '';
-      if (lower.includes('boulangerie') || lower.includes('pain')) {
-        filterTag = '["shop"="bakery"]';
-      } else if (lower.includes('supermarché') || lower.includes('supermarche') || lower.includes('course') || lower.includes('epicerie')) {
-        filterTag = '["shop"~"supermarket|convenience|grocery"]';
-      } else if (lower.includes('cinema') || lower.includes('cinéma')) {
-        filterTag = '["amenity"="cinema"]';
-      } else if (lower.includes('pharmacie')) {
-        filterTag = '["amenity"="pharmacy"]';
-      } else if (lower.includes('essence') || lower.includes('carburant') || lower.includes('station')) {
-        filterTag = '["amenity"="fuel"]';
-      } else if (lower.includes('resto') || lower.includes('restaurant') || lower.includes('manger')) {
-        filterTag = '["amenity"="restaurant"]';
-      } else if (lower.includes('café') || lower.includes('cafe') || lower.includes('bar') || lower.includes('pub')) {
-        filterTag = '["amenity"~"cafe|bar|pub"]';
-      } else if (lower.includes('parking')) {
-        filterTag = '["amenity"="parking"]';
-      } else if (lower.includes('banque') || lower.includes('distributeur') || lower.includes('dab')) {
-        filterTag = '["amenity"~"bank|atm"]';
-      } else if (lower.includes('fast food') || lower.includes('burger') || lower.includes('pizza')) {
-        filterTag = '["amenity"="fast_food"]';
-      } else if (lower.includes('hopital') || lower.includes('hôpital') || lower.includes('docteur') || lower.includes('medecin')) {
-        filterTag = '["amenity"~"hospital|clinic|doctors"]';
-      } else {
-        // Generic regex match on name or tag
-        filterTag = `["name"~"${escapeOverpass(q)}",i]`;
+      if (lower.includes('supermarché') || lower.includes('supermarche') || lower.includes('course') || lower.includes('epicerie') || lower.includes('magasin')) {
+        return '["shop"~"supermarket|convenience|grocery"]';
       }
-
-      const radius = 5000; // 5 km radius
-      const query = `[out:json][timeout:8];(
-        node${filterTag}(around:${radius},${userLat},${userLon});
-        way${filterTag}(around:${radius},${userLat},${userLon});
-      );out center 25;`;
-
-      try {
-        const params = new URLSearchParams();
-        params.append('data', query);
-
-        const res = await fetch('https://overpass-api.de/api/interpreter', {
-          method: 'POST',
-          body: params,
-          headers: { 'User-Agent': 'WakeGPS/1.0' }
-        });
-
-        const data = await res.json();
-        if (!data || !data.elements || !data.elements.length) {
-          dropdownContainer.innerHTML = '<div class="list-item" style="color:#8E8E93;">Aucun POI trouvé à proximité</div>';
-          dropdownContainer.classList.add('active');
-          return;
-        }
-
-        // Calculate distance and sort closest first
-        const poiList = data.elements.map(el => {
-          const lat = el.lat || el.center?.lat;
-          const lon = el.lon || el.center?.lon;
-          const name = el.tags?.name || getGenericPOIName(el.tags) || q;
-          const street = [el.tags?.['addr:housenumber'], el.tags?.['addr:street'], el.tags?.['addr:city']].filter(Boolean).join(' ');
-          const dMeters = calculateDistance(userLat, userLon, lat, lon);
-          return { name, street: street || el.tags?.brand || 'Point d\'intérêt', lat, lon, dMeters };
-        }).filter(p => p.lat && p.lon);
-
-        poiList.sort((a, b) => a.dMeters - b.dMeters);
-
-        dropdownContainer.innerHTML = poiList.slice(0, 10).map(poi => `
-          <div class="list-item" data-lat="${poi.lat}" data-lon="${poi.lon}" data-title="${escapeHtml(poi.name)}" data-subtitle="${escapeHtml(poi.street)}">
-            <div class="list-item-icon">🏷️</div>
-            <div class="list-item-content">
-              <div class="list-item-title">${escapeHtml(poi.name)}</div>
-              <div class="list-item-subtitle">${escapeHtml(poi.street)}</div>
-            </div>
-            <div class="list-item-meta">${formatDistance(poi.dMeters)}</div>
-          </div>
-        `).join('');
-
-        dropdownContainer.classList.add('active');
-      } catch (err) {
-        console.error('POI search error:', err);
+      if (lower.includes('cinema') || lower.includes('cinéma') || lower.includes('film')) {
+        return '["amenity"="cinema"]';
       }
+      if (lower.includes('pharmacie') || lower.includes('medicament') || lower.includes('médicament')) {
+        return '["amenity"="pharmacy"]';
+      }
+      if (lower.includes('essence') || lower.includes('carburant') || lower.includes('station') || lower.includes('diesel') || lower.includes('station-service')) {
+        return '["amenity"="fuel"]';
+      }
+      if (lower.includes('resto') || lower.includes('restaurant') || lower.includes('manger') || lower.includes('brasserie')) {
+        return '["amenity"="restaurant"]';
+      }
+      if (lower.includes('café') || lower.includes('cafe') || lower.includes('bar') || lower.includes('pub')) {
+        return '["amenity"~"cafe|bar|pub"]';
+      }
+      if (lower.includes('parking') || lower.includes('stationnement') || lower.includes('garage')) {
+        return '["amenity"="parking"]';
+      }
+      if (lower.includes('banque') || lower.includes('distributeur') || lower.includes('dab') || lower.includes('atm')) {
+        return '["amenity"~"bank|atm"]';
+      }
+      if (lower.includes('fast food') || lower.includes('fast-food') || lower.includes('burger') || lower.includes('pizza') || lower.includes('kebab') || lower.includes('tacos')) {
+        return '["amenity"="fast_food"]';
+      }
+      if (lower.includes('hopital') || lower.includes('hôpital') || lower.includes('docteur') || lower.includes('medecin') || lower.includes('urgence')) {
+        return '["amenity"~"hospital|clinic|doctors"]';
+      }
+      return null;
     }
 
     function getGenericPOIName(tags) {
