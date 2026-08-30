@@ -1,4 +1,4 @@
-const CACHE_NAME = 'wake-v3';
+const CACHE_NAME = 'wake-v4';
 const STATIC_ASSETS = [
   './',
   './index.html',
@@ -41,8 +41,8 @@ self.addEventListener('activate', (event) => {
 self.addEventListener('fetch', (event) => {
   const url = new URL(event.request.url);
 
-  // OSRM & Overpass API requests -> always network first
-  if (url.hostname.includes('project-osrm.org') || url.hostname.includes('overpass-api.de')) {
+  // Live APIs: OSRM, Overpass & Photon Komoot -> network first
+  if (url.hostname.includes('project-osrm.org') || url.hostname.includes('overpass-api.de') || url.hostname.includes('komoot.io')) {
     event.respondWith(
       fetch(event.request).catch(() => {
         return new Response(JSON.stringify({ code: 'OfflineError', message: 'Pas de connexion réseau.' }), {

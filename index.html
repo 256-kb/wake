@@ -1318,8 +1318,8 @@
       }
 
       searchDebounce = setTimeout(() => {
-        searchUnified(q);
-      }, 300);
+        searchPhoton(q);
+      }, 250);
     }
 
     function renderHistory() {
@@ -1368,7 +1368,7 @@
     }
 
     /* ==========================================================
-       LOCAL SEARCH (POI & ADDRESS STRICTLY AROUND USER POINT)
+       PHOTON SEARCH ENGINE (KOMOOT - ADRESSES & POI INTELLIGENTS)
        ========================================================== */
     function getSearchAnchor() {
       if (state.userCoords && state.userCoords[0] && state.userCoords[1]) {
@@ -1378,138 +1378,64 @@
       return [c.lat, c.lng];
     }
 
-    async function searchUnified(q) {
-      const lower = q.toLowerCase();
+    async function searchPhoton(q) {
       const [anchorLat, anchorLon] = getSearchAnchor();
 
-      const poiFilter = getPOITagFilter(lower);
-      const isPoiQuery = poiFilter !== null;
-
-      dropdownContainer.innerHTML = '<div class="list-item" style="color:#8E8E93;"><div class="list-item-icon">⏳</div><div class="list-item-content"><div class="list-item-title">Recherche autour de vous...</div></div></div>';
+      dropdownContainer.innerHTML = '<div class="list-item" style="color:#8E8E93;"><div class="list-item-icon">⏳</div><div class="list-item-content"><div class="list-item-title">Recherche en cours...</div></div></div>';
       dropdownContainer.classList.add('active');
 
-      const promises = [];
-
-      // 1. Nominatim address search biased strictly around user anchor
-      const delta = isPoiQuery ? 0.15 : 0.35;
-      const viewbox = `${anchorLon - delta},${anchorLat + delta},${anchorLon + delta},${anchorLat - delta}`;
-      const nomUrl = `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(q)}&viewbox=${viewbox}&bounded=${isPoiQuery ? '1' : '0'}&limit=8&addressdetails=1`;
-      
-      promises.push(
-        fetch(nomUrl, { headers: { 'User-Agent': 'WakeGPS/1.0' } })
-          .then(r => r.json())
-          .catch(() => [])
-      );
-
-      // 2. Overpass POI search (Around anchor point)
-      let effectiveFilter = poiFilter;
-      if (!effectiveFilter) {
-        effectiveFilter = `["name"~"${escapeOverpass(q)}",i]`;
-      }
-
-      const radiusMeters = 5000; // 5 km around user
-      const overpassQuery = `[out:json][timeout:6];(
-        node${effectiveFilter}(around:${radiusMeters},${anchorLat.toFixed(5)},${anchorLon.toFixed(5)});
-        way${effectiveFilter}(around:${radiusMeters},${anchorLat.toFixed(5)},${anchorLon.toFixed(5)});
-      );out center 15;`;
-
-      const params = new URLSearchParams();
-      params.append('data', overpassQuery);
-
-      const overpassEndpoints = [
-        'https://overpass-api.de/api/interpreter',
-        'https://lz4.overpass-api.de/api/interpreter'
-      ];
-
-      const fetchOverpassWithFallback = async () => {
-        for (const ep of overpassEndpoints) {
-          try {
-            const res = await fetch(ep, {
-              method: 'POST',
-              body: params,
-              headers: { 'User-Agent': 'WakeGPS/1.0' }
-            });
-            if (res.ok) {
-              const data = await res.json();
-              if (data && data.elements) return data.elements;
-            }
-          } catch (e) {
-            console.warn('Overpass mirror failed:', ep);
-          }
-        }
-        return [];
-      };
-
-      promises.push(fetchOverpassWithFallback());
+      const url = `https://photon.komoot.io/api/?q=${encodeURIComponent(q)}&lat=${anchorLat.toFixed(5)}&lon=${anchorLon.toFixed(5)}&limit=6&lang=fr`;
 
       try {
-        const results = await Promise.all(promises);
-        const addressResults = Array.isArray(results[0]) ? results[0] : [];
-        const poiResults = Array.isArray(results[1]) ? results[1] : [];
+        const res = await fetch(url);
+        if (!res.ok) throw new Error('Photon API status ' + res.status);
+        const data = await res.json();
 
-        let combined = [];
-
-        // Format POIs (from Overpass)
-        poiResults.forEach(el => {
-          const lat = el.lat || el.center?.lat;
-          const lon = el.lon || el.center?.lon;
-          if (!lat || !lon) return;
-          const name = el.tags?.name || getGenericPOIName(el.tags) || q;
-          const street = [el.tags?.['addr:housenumber'], el.tags?.['addr:street'], el.tags?.['addr:city']].filter(Boolean).join(' ') || el.tags?.brand || 'Point d\'intérêt local';
-          const dMeters = calculateDistance(anchorLat, anchorLon, lat, lon);
-
-          combined.push({
-            title: name,
-            subtitle: street,
-            lat: lat,
-            lon: lon,
-            type: 'poi',
-            dMeters: dMeters
-          });
-        });
-
-        // Format Addresses (from Nominatim)
-        addressResults.forEach(p => {
-          const lat = parseFloat(p.lat);
-          const lon = parseFloat(p.lon);
-          if (isNaN(lat) || isNaN(lon)) return;
-          const title = p.name || p.display_name.split(',')[0];
-          const dMeters = calculateDistance(anchorLat, anchorLon, lat, lon);
-
-          const isDuplicate = combined.some(c => Math.abs(c.lat - lat) < 0.0003 && Math.abs(c.lon - lon) < 0.0003);
-          if (!isDuplicate) {
-            combined.push({
-              title: title,
-              subtitle: p.display_name,
-              lat: lat,
-              lon: lon,
-              type: 'address',
-              dMeters: dMeters
-            });
-          }
-        });
-
-        if (!combined.length) {
-          dropdownContainer.innerHTML = '<div class="list-item" style="color:#8E8E93;"><div class="list-item-icon">📍</div><div class="list-item-content"><div class="list-item-title">Aucun résultat trouvé autour de vous</div></div></div>';
+        if (!data || !data.features || !data.features.length) {
+          dropdownContainer.innerHTML = '<div class="list-item" style="color:#8E8E93;"><div class="list-item-icon">📍</div><div class="list-item-content"><div class="list-item-title">Aucun résultat trouvé</div></div></div>';
           dropdownContainer.classList.add('active');
           return;
         }
 
-        // STRICT SORTING: Closest to furthest from user's current point
-        combined.sort((a, b) => a.dMeters - b.dMeters);
+        const items = data.features.map(f => {
+          const [lon, lat] = f.geometry.coordinates;
+          const prop = f.properties || {};
 
-        // If local results exist (< 25km), filter out far away places (e.g. Paris when in another city)
-        const hasLocal = combined.some(c => c.dMeters < 25000);
-        if (hasLocal) {
-          combined = combined.filter(c => c.dMeters < 35000);
-        }
+          // Determine clean title
+          const title = prop.name || [prop.housenumber, prop.street].filter(Boolean).join(' ') || prop.city || q;
 
-        dropdownContainer.innerHTML = combined.slice(0, 10).map(item => {
-          const icon = item.type === 'poi' ? '🏷️' : '📍';
+          // Determine clean formatted subtitle
+          const addressParts = [
+            [prop.housenumber, prop.street].filter(Boolean).join(' '),
+            prop.postcode,
+            prop.city,
+            prop.county
+          ].filter(Boolean);
+
+          const subtitle = addressParts.filter(p => p !== title).join(', ') || prop.country || '';
+
+          // Determine category icon
+          const isPoi = prop.osm_key === 'shop' || prop.osm_key === 'amenity' || prop.osm_key === 'tourism' || prop.osm_key === 'leisure';
+          const icon = isPoi ? '🏷️' : '📍';
+
+          const dMeters = calculateDistance(anchorLat, anchorLon, lat, lon);
+
+          return {
+            title: title,
+            subtitle: subtitle,
+            lat: lat,
+            lon: lon,
+            type: isPoi ? 'poi' : 'address',
+            dMeters: dMeters,
+            icon: icon
+          };
+        });
+
+        dropdownContainer.innerHTML = items.map(item => {
           const distStr = item.dMeters < Infinity ? formatDistance(item.dMeters) : '';
           return `
             <div class="list-item" data-lat="${item.lat}" data-lon="${item.lon}" data-title="${escapeHtml(item.title)}" data-subtitle="${escapeHtml(item.subtitle)}">
-              <div class="list-item-icon">${icon}</div>
+              <div class="list-item-icon">${item.icon}</div>
               <div class="list-item-content">
                 <div class="list-item-title">${escapeHtml(item.title)}</div>
                 <div class="list-item-subtitle">${escapeHtml(item.subtitle)}</div>
@@ -1522,62 +1448,10 @@
         dropdownContainer.classList.add('active');
 
       } catch (err) {
-        console.error('Search error:', err);
+        console.error('Photon search error:', err);
+        dropdownContainer.innerHTML = '<div class="list-item" style="color:#8E8E93;"><div class="list-item-icon">⚠️</div><div class="list-item-content"><div class="list-item-title">Erreur lors de la recherche</div></div></div>';
+        dropdownContainer.classList.add('active');
       }
-    }
-
-    function getPOITagFilter(lower) {
-      if (lower.includes('boulangerie') || lower.includes('pain') || lower.includes('croissant') || lower.includes('baguette')) {
-        return '["shop"="bakery"]';
-      }
-      if (lower.includes('supermarché') || lower.includes('supermarche') || lower.includes('course') || lower.includes('epicerie') || lower.includes('magasin')) {
-        return '["shop"~"supermarket|convenience|grocery"]';
-      }
-      if (lower.includes('cinema') || lower.includes('cinéma') || lower.includes('film')) {
-        return '["amenity"="cinema"]';
-      }
-      if (lower.includes('pharmacie') || lower.includes('medicament') || lower.includes('médicament')) {
-        return '["amenity"="pharmacy"]';
-      }
-      if (lower.includes('essence') || lower.includes('carburant') || lower.includes('station') || lower.includes('diesel') || lower.includes('station-service')) {
-        return '["amenity"="fuel"]';
-      }
-      if (lower.includes('resto') || lower.includes('restaurant') || lower.includes('manger') || lower.includes('brasserie')) {
-        return '["amenity"="restaurant"]';
-      }
-      if (lower.includes('café') || lower.includes('cafe') || lower.includes('bar') || lower.includes('pub')) {
-        return '["amenity"~"cafe|bar|pub"]';
-      }
-      if (lower.includes('parking') || lower.includes('stationnement') || lower.includes('garage')) {
-        return '["amenity"="parking"]';
-      }
-      if (lower.includes('banque') || lower.includes('distributeur') || lower.includes('dab') || lower.includes('atm')) {
-        return '["amenity"~"bank|atm"]';
-      }
-      if (lower.includes('fast food') || lower.includes('fast-food') || lower.includes('burger') || lower.includes('pizza') || lower.includes('kebab') || lower.includes('tacos')) {
-        return '["amenity"="fast_food"]';
-      }
-      if (lower.includes('hopital') || lower.includes('hôpital') || lower.includes('docteur') || lower.includes('medecin') || lower.includes('urgence')) {
-        return '["amenity"~"hospital|clinic|doctors"]';
-      }
-      return null;
-    }
-
-    function getGenericPOIName(tags) {
-      if (!tags) return null;
-      if (tags.shop === 'bakery') return 'Boulangerie';
-      if (tags.shop === 'supermarket') return 'Supermarché';
-      if (tags.amenity === 'pharmacy') return 'Pharmacie';
-      if (tags.amenity === 'cinema') return 'Cinéma';
-      if (tags.amenity === 'fuel') return 'Station Service';
-      if (tags.amenity === 'restaurant') return 'Restaurant';
-      if (tags.amenity === 'cafe') return 'Café';
-      if (tags.amenity === 'parking') return 'Parking';
-      return null;
-    }
-
-    function escapeOverpass(str) {
-      return str.replace(/["\\]/g, '\\$&');
     }
 
     dropdownContainer.addEventListener('click', (e) => {
