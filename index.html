@@ -1356,20 +1356,20 @@
           const rawSpeedKmh = (speeds[i] || 13.8) * 3.6; // convert m/s to km/h
           if (distM <= 0) continue;
 
-          // Real driving speed aligned with OSM speed limits (30->25, 50->45, 70->65, 80/90->85, 110->105, 130->125)
+          // Real driving speed aligned with OSM speed limits (Zone 30 -> 40 km/h, 50->48, 70->68, 80/90->88, 110->108, 130->128)
           let realSpeedKmh = rawSpeedKmh;
           if (rawSpeedKmh <= 32) {
-            realSpeedKmh = Math.min(25, Math.max(18, rawSpeedKmh * 0.88));
+            realSpeedKmh = Math.min(40, Math.max(35, rawSpeedKmh * 1.5)); // Zone 30 roulée plutôt à 40 km/h
           } else if (rawSpeedKmh <= 58) {
-            realSpeedKmh = Math.min(45, Math.max(35, rawSpeedKmh * 0.88));
+            realSpeedKmh = Math.min(48, Math.max(40, rawSpeedKmh * 0.95));
           } else if (rawSpeedKmh <= 78) {
-            realSpeedKmh = Math.min(65, Math.max(58, rawSpeedKmh * 0.93));
+            realSpeedKmh = Math.min(68, Math.max(60, rawSpeedKmh * 0.95));
           } else if (rawSpeedKmh <= 98) {
-            realSpeedKmh = Math.min(85, Math.max(78, rawSpeedKmh * 0.95));
+            realSpeedKmh = Math.min(88, Math.max(80, rawSpeedKmh * 0.96));
           } else if (rawSpeedKmh <= 118) {
-            realSpeedKmh = Math.min(105, Math.max(98, rawSpeedKmh * 0.96));
+            realSpeedKmh = Math.min(108, Math.max(100, rawSpeedKmh * 0.97));
           } else {
-            realSpeedKmh = Math.min(125, Math.max(115, rawSpeedKmh * 0.97));
+            realSpeedKmh = Math.min(128, Math.max(120, rawSpeedKmh * 0.98));
           }
 
           totalSec += (distM / 1000) / realSpeedKmh * 3600;
@@ -1387,7 +1387,7 @@
           const rawDur = s.duration || 0;
           if (distM <= 0 || rawDur <= 0) continue;
           const spd = (distM / rawDur) * 3.6;
-          let realSpd = spd <= 32 ? 25 : (spd <= 58 ? 45 : (spd <= 78 ? 65 : (spd <= 98 ? 85 : (spd <= 118 ? 105 : 125))));
+          let realSpd = spd <= 32 ? 40 : (spd <= 58 ? 48 : (spd <= 78 ? 68 : (spd <= 98 ? 88 : (spd <= 118 ? 108 : 128))));
           totalSec += (distM / 1000) / realSpd * 3600;
         }
         return Math.round(totalSec);
