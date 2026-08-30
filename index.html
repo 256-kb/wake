@@ -1149,6 +1149,8 @@
         }
       }
 
+      // 8. Dynamic Speed Limit & Radar tracking
+      updateCurrentSpeedLimitFromLocation(effectiveLat, effectiveLon);
       checkUpcomingRadars(effectiveLat, effectiveLon);
     }
 
@@ -1265,8 +1267,8 @@
         state.activeRoute = route;
         state.routeCoordinates = route.geometry.coordinates; // [[lon, lat], ...]
 
-        // Infer road speed limit according to transport mode and OSM tags
-        inferSpeedLimitFromRoute(route);
+        // Update current road speed limit from OSM step data
+        updateCurrentSpeedLimitFromLocation(startLat, startLon);
 
         // Update GeoJSON route source in MapLibre
         const routeSource = map.getSource('route');
@@ -1394,29 +1396,68 @@
       return Math.round(route.duration);
     }
 
-    function inferSpeedLimitFromRoute(route) {
+    function getSpeedLimitForStep(step) {
+      if (!step) return 50;
+      const roadName = (step.name || '').toLowerCase();
+      const ref = (step.ref || '').toLowerCase();
+      const spd = step.duration > 0 ? (step.distance / step.duration) * 3.6 : 50;
+
+      // 1. Autoroute
+      if (ref.startsWith('a') || roadName.includes('autoroute')) {
+        return spd > 115 ? 130 : 110;
+      }
+      // 2. Rocade, Périphérique & Voie Rapide
+      if (roadName.includes('rocade') || roadName.includes('périphérique') || roadName.includes('voie rapide') || ref.startsWith('n')) {
+        if (spd <= 75) return 70;
+        if (spd <= 95) return 90;
+        return 110;
+      }
+      // 3. Zone 30 & Ruelles piétonnes
+      if (roadName.includes('zone 30') || roadName.includes('piétonne') || spd <= 32) {
+        return 30;
+      }
+      // 4. Routes Départementales
+      if (ref.startsWith('d') || roadName.includes('route départementale') || roadName.includes('route de')) {
+        if (spd >= 85) return 90;
+        if (spd >= 72) return 80;
+        if (spd >= 60) return 70;
+        return 80;
+      }
+      // 5. Profil de vitesse OSM standard
+      if (spd <= 35) return 30;
+      if (spd <= 60) return 50;
+      if (spd <= 75) return 70;
+      if (spd <= 88) return 80;
+      if (spd <= 100) return 90;
+      if (spd <= 118) return 110;
+      return 130;
+    }
+
+    function updateCurrentSpeedLimitFromLocation(userLat, userLon) {
       if (state.transportMode !== 'driving') {
         updateSpeedLimitVisibility();
         return;
       }
 
-      if (route.legs && route.legs[0] && route.legs[0].steps && route.legs[0].steps.length) {
-        const firstStep = route.legs[0].steps[0];
-        const roadName = (firstStep.name || '').toLowerCase();
-        const ref = (firstStep.ref || '').toLowerCase();
-        const spd = firstStep.duration > 0 ? (firstStep.distance / firstStep.duration) * 3.6 : 50;
+      if (state.activeRoute && state.activeRoute.legs && state.activeRoute.legs[0] && state.activeRoute.legs[0].steps) {
+        const steps = state.activeRoute.legs[0].steps;
+        let minDistance = Infinity;
+        let closestStep = steps[0];
 
-        if (ref.startsWith('a') || roadName.includes('autoroute')) {
-          setSpeedLimit(spd > 115 ? 130 : 110);
-        } else if (roadName.includes('rocade') || roadName.includes('périphérique') || roadName.includes('voie rapide') || ref.startsWith('n')) {
-          setSpeedLimit(spd <= 80 ? 70 : (spd <= 100 ? 90 : 110));
-        } else if (roadName.includes('zone 30') || roadName.includes('rue piétonne') || spd <= 25) {
-          setSpeedLimit(30);
-        } else if (ref.startsWith('d') || roadName.includes('route départementale') || roadName.includes('route de')) {
-          setSpeedLimit(spd >= 75 ? 80 : 50);
-        } else {
-          setSpeedLimit(spd <= 35 ? 30 : 50);
+        for (let i = 0; i < steps.length; i++) {
+          const s = steps[i];
+          if (s.maneuver && s.maneuver.location) {
+            const [lon, lat] = s.maneuver.location;
+            const d = calculateDistance(userLat, userLon, lat, lon);
+            if (d < minDistance) {
+              minDistance = d;
+              closestStep = s;
+            }
+          }
         }
+
+        const osmLimit = getSpeedLimitForStep(closestStep);
+        setSpeedLimit(osmLimit);
       } else {
         setSpeedLimit(50);
       }
