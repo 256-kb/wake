@@ -1109,11 +1109,13 @@
         updateCameraPosition(false);
       }
 
-      // Dynamic Route Recalculation & Radar checks
-      if (state.destination && prevCoords) {
-        const distMoved = calculateDistance(prevCoords[0], prevCoords[1], latitude, longitude);
-        if (distMoved > 30) {
+      // Dynamic Route Recalculation & Live ETA (no unnecessary heavy server calls)
+      if (state.destination && prevCoords && state.routeCoordinates.length > 1) {
+        const offRouteDist = minDistanceToRoute(latitude, longitude, state.routeCoordinates);
+        if (offRouteDist > 65) {
           calculateRoute(state.destination, false);
+        } else {
+          updateLiveETA();
         }
       }
 
@@ -1350,6 +1352,111 @@
         }
       }
     }
+
+    /* ==========================================================
+       DYNAMIC LIVE ETA (LOCAL CONTINUOUS & 10s PERIODIC UPDATE)
+       ========================================================== */
+    function getRemainingRouteDistance(userLat, userLon, routeCoords) {
+      if (!routeCoords || routeCoords.length < 2) return 0;
+
+      let minDistance = Infinity;
+      let closestIndex = 0;
+
+      for (let i = 0; i < routeCoords.length - 1; i++) {
+        const [aLon, aLat] = routeCoords[i];
+        const [bLon, bLat] = routeCoords[i + 1];
+        const d = distToSegment(userLat, userLon, aLat, aLon, bLat, bLon);
+        if (d < minDistance) {
+          minDistance = d;
+          closestIndex = i;
+        }
+      }
+
+      // Distance from user to next route point
+      const [nextLon, nextLat] = routeCoords[closestIndex + 1];
+      let remainingMeters = calculateDistance(userLat, userLon, nextLat, nextLon);
+
+      // Sum all remaining segments along route
+      for (let i = closestIndex + 1; i < routeCoords.length - 1; i++) {
+        const [aLon, aLat] = routeCoords[i];
+        const [bLon, bLat] = routeCoords[i + 1];
+        remainingMeters += calculateDistance(aLat, aLon, bLat, bLon);
+      }
+
+      return remainingMeters;
+    }
+
+    function updateLiveETA() {
+      if (!state.destination || !state.activeRoute || !state.userCoords || !state.routeCoordinates.length) {
+        return;
+      }
+
+      const [userLat, userLon] = state.userCoords;
+      const mode = state.transportMode || 'driving';
+      const remMeters = getRemainingRouteDistance(userLat, userLon, state.routeCoordinates);
+
+      // Destination reached check (< 20m)
+      if (remMeters < 20) {
+        showToast('Vous êtes arrivé à destination ! 🎉');
+        clearRoute();
+        return;
+      }
+
+      // Baseline speed per transport mode
+      let baseSpeedKmh = 50;
+      if (mode === 'cycling') baseSpeedKmh = 14.5;
+      if (mode === 'walking') baseSpeedKmh = 4.8;
+
+      let effectiveSpeed = baseSpeedKmh;
+      const currentSpeed = state.currentSpeedKmh || 0;
+
+      // Real-time speed adaptation (e.g. driving 180 km/h, city cruising, running, etc.)
+      if (currentSpeed > 4) {
+        if (mode === 'driving') {
+          if (currentSpeed > baseSpeedKmh) {
+            effectiveSpeed = currentSpeed * 0.9 + baseSpeedKmh * 0.1;
+          } else {
+            effectiveSpeed = currentSpeed * 0.6 + baseSpeedKmh * 0.4;
+          }
+        } else if (mode === 'cycling') {
+          effectiveSpeed = Math.max(8, Math.min(45, currentSpeed * 0.75 + baseSpeedKmh * 0.25));
+        } else if (mode === 'walking') {
+          effectiveSpeed = Math.max(3, Math.min(15, currentSpeed * 0.75 + baseSpeedKmh * 0.25));
+        }
+      }
+
+      let durationSec = (remMeters / 1000) / effectiveSpeed * 3600;
+
+      // Peak hour adjustment in car mode
+      const isPeak = mode === 'driving' && isPeakHour();
+      if (isPeak && currentSpeed < 45) {
+        durationSec *= 1.25;
+        hudTrafficBadge.classList.add('active');
+      } else {
+        hudTrafficBadge.classList.remove('active');
+      }
+
+      // Update HUD values smoothly
+      const distanceKm = (remMeters / 1000).toFixed(remMeters < 10000 ? 1 : 0);
+      const durationMin = Math.max(1, Math.round(durationSec / 60));
+
+      hudDist.textContent = `${distanceKm} km`;
+      if (durationMin >= 60) {
+        const h = Math.floor(durationMin / 60);
+        const m = durationMin % 60;
+        hudTime.textContent = `${h} h ${m.toString().padStart(2, '0')} min`;
+      } else {
+        hudTime.textContent = `${durationMin} min`;
+      }
+
+      const etaDate = new Date(Date.now() + durationSec * 1000);
+      const etaH = etaDate.getHours().toString().padStart(2, '0');
+      const etaM = etaDate.getMinutes().toString().padStart(2, '0');
+      hudEta.textContent = `Arrivée ${etaH}:${etaM}`;
+    }
+
+    // Periodic live ETA tick every 10 seconds
+    setInterval(updateLiveETA, 10000);
 
     function clearRoute() {
       state.destination = null;
