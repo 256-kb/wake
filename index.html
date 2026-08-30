@@ -1213,15 +1213,26 @@
 
       const [startLat, startLon] = state.userCoords;
       const [destLat, destLon] = destCoords;
-      const profile = state.transportMode || 'driving';
+      const mode = state.transportMode || 'driving';
 
-      const url = `https://router.project-osrm.org/route/v1/${profile}/${startLon},${startLat};${destLon},${destLat}?overview=full&geometries=geojson&steps=true`;
+      // Select dedicated routing server
+      let primaryHost = 'https://routing.openstreetmap.de/routed-car';
+      if (mode === 'cycling') primaryHost = 'https://routing.openstreetmap.de/routed-bike';
+      if (mode === 'walking') primaryHost = 'https://routing.openstreetmap.de/routed-foot';
+
+      const routeQuery = `${startLon},${startLat};${destLon},${destLat}?overview=full&geometries=geojson&steps=true`;
 
       try {
-        const response = await fetch(url);
-        const data = await response.json();
+        let response = await fetch(`${primaryHost}/route/v1/driving/${routeQuery}`).catch(() => null);
+        let data = response && response.ok ? await response.json() : null;
 
-        if (data.code !== 'Ok' || !data.routes || !data.routes.length) {
+        // Fallback to project-osrm.org
+        if (!data || data.code !== 'Ok' || !data.routes || !data.routes.length) {
+          response = await fetch(`https://router.project-osrm.org/route/v1/driving/${routeQuery}`);
+          data = await response.json();
+        }
+
+        if (!data || data.code !== 'Ok' || !data.routes || !data.routes.length) {
           showToast('Itinéraire introuvable');
           return;
         }
@@ -1230,7 +1241,7 @@
         state.activeRoute = route;
         state.routeCoordinates = route.geometry.coordinates; // [[lon, lat], ...]
 
-        // Infer road speed limit
+        // Infer road speed limit according to transport mode
         inferSpeedLimitFromRoute(route);
 
         // Update GeoJSON route source in MapLibre
@@ -1243,13 +1254,31 @@
           });
         }
 
-        // Peak hour adjustment (+25% during Monday-Friday 7h-9h & 17h-19h in driving mode)
+        // Calculate realistic travel duration per mode
         let effectiveDurationSec = route.duration;
-        const isPeak = profile === 'driving' && isPeakHour();
-        if (isPeak) {
-          effectiveDurationSec *= 1.25;
-          hudTrafficBadge.classList.add('active');
+        const avgSpeedKmh = (route.distance / route.duration) * 3.6;
+
+        if (mode === 'cycling') {
+          // If server returned car speeds (> 28 km/h), compute realistic bike pace (~14.5 km/h)
+          if (avgSpeedKmh > 28) {
+            effectiveDurationSec = (route.distance / 1000) / 14.5 * 3600;
+          }
+        } else if (mode === 'walking') {
+          // If server returned car speeds (> 7 km/h), compute realistic walking pace (~4.8 km/h)
+          if (avgSpeedKmh > 7) {
+            effectiveDurationSec = (route.distance / 1000) / 4.8 * 3600;
+          }
         } else {
+          // Car Mode: Apply peak hour penalty (+25% during Monday-Friday 7h-9h & 17h-19h)
+          if (isPeakHour()) {
+            effectiveDurationSec *= 1.25;
+            hudTrafficBadge.classList.add('active');
+          } else {
+            hudTrafficBadge.classList.remove('active');
+          }
+        }
+
+        if (mode !== 'driving') {
           hudTrafficBadge.classList.remove('active');
         }
 
@@ -1283,7 +1312,7 @@
         }
 
         // Fetch speed cameras only when driving
-        if (profile === 'driving') {
+        if (mode === 'driving') {
           fetchSpeedCamerasOnRoute(state.routeCoordinates);
         } else {
           clearRadarMarkers();
