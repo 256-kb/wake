@@ -1271,7 +1271,7 @@
       if (mode === 'cycling') primaryHost = 'https://routing.openstreetmap.de/routed-bike';
       if (mode === 'walking') primaryHost = 'https://routing.openstreetmap.de/routed-foot';
 
-      const routeQuery = `${startLon},${startLat};${destLon},${destLat}?overview=full&geometries=geojson&steps=true`;
+      const routeQuery = `${startLon},${startLat};${destLon},${destLat}?overview=full&geometries=geojson&steps=true&annotations=true`;
 
       try {
         let response = await fetch(`${primaryHost}/route/v1/driving/${routeQuery}`).catch(() => null);
@@ -1292,7 +1292,7 @@
         state.activeRoute = route;
         state.routeCoordinates = route.geometry.coordinates; // [[lon, lat], ...]
 
-        // Infer road speed limit according to transport mode
+        // Infer road speed limit according to transport mode and OSM tags
         inferSpeedLimitFromRoute(route);
 
         // Update GeoJSON route source in MapLibre
@@ -1305,7 +1305,7 @@
           });
         }
 
-        // Calculate realistic travel duration per mode
+        // Calculate calibrated travel duration reflecting real OSM segment speeds & road types
         let effectiveDurationSec = route.duration;
         const avgSpeedKmh = (route.distance / route.duration) * 3.6;
 
@@ -1320,8 +1320,8 @@
             effectiveDurationSec = (route.distance / 1000) / 4.8 * 3600;
           }
         } else {
-          // Car Mode: Apply 1.58x realistic urban/road calibration factor (red lights, roundabouts, traffic)
-          effectiveDurationSec = route.duration * 1.58;
+          // Car Mode: Calibrate duration using per-step OSM way speeds (zones 30, 50, périph, autoroutes)
+          effectiveDurationSec = calculateCalibratedDrivingDuration(route);
 
           // Peak hour adjustment (+25% during Monday-Friday 7h-9h & 17h-19h)
           if (isPeakHour()) {
@@ -1331,6 +1331,8 @@
             hudTrafficBadge.classList.remove('active');
           }
         }
+
+        state.activeRoute.calibratedDuration = effectiveDurationSec;
 
         if (mode !== 'driving') {
           hudTrafficBadge.classList.remove('active');
@@ -1378,6 +1380,45 @@
       }
     }
 
+    function calculateCalibratedDrivingDuration(route) {
+      if (!route || !route.legs || !route.legs[0] || !route.legs[0].steps) {
+        return route ? Math.round(route.duration * 1.08) : 0;
+      }
+
+      const steps = route.legs[0].steps;
+      let totalCalibratedSec = 0;
+
+      for (const step of steps) {
+        const distMeters = step.distance || 0;
+        const rawDurSec = step.duration || 0;
+        if (distMeters === 0 || rawDurSec === 0) continue;
+
+        const stepSpeedKmh = (distMeters / rawDurSec) * 3.6;
+
+        // Calibrate based on real OSM road segment speeds (zones 30, streets at 50, ring roads, expressways)
+        let segmentFactor = 1.02;
+        if (stepSpeedKmh <= 25) {
+          segmentFactor = 1.15; // Zone 30 / pedestrianized / residential / dense city
+        } else if (stepSpeedKmh <= 45) {
+          segmentFactor = 1.12; // 50 km/h city boulevards with traffic lights
+        } else if (stepSpeedKmh <= 75) {
+          segmentFactor = 1.06; // Ring roads / primary secondary arteries
+        } else {
+          segmentFactor = 1.02; // Motorways & Expressways
+        }
+
+        // Realistic turn / maneuver delay (+2.5s for non-straight turns)
+        let turnDelay = 0;
+        if (step.maneuver && step.maneuver.type && !['depart', 'arrive', 'straight', 'continue'].includes(step.maneuver.type)) {
+          turnDelay = 2.5;
+        }
+
+        totalCalibratedSec += (rawDurSec * segmentFactor) + turnDelay;
+      }
+
+      return Math.round(totalCalibratedSec);
+    }
+
     function inferSpeedLimitFromRoute(route) {
       if (state.transportMode !== 'driving') {
         updateSpeedLimitVisibility();
@@ -1388,15 +1429,18 @@
         const firstStep = route.legs[0].steps[0];
         const roadName = (firstStep.name || '').toLowerCase();
         const ref = (firstStep.ref || '').toLowerCase();
+        const spd = firstStep.duration > 0 ? (firstStep.distance / firstStep.duration) * 3.6 : 50;
 
         if (ref.startsWith('a') || roadName.includes('autoroute')) {
-          setSpeedLimit(130);
-        } else if (ref.startsWith('n') || roadName.includes('voie rapide') || roadName.includes('rocade')) {
-          setSpeedLimit(110);
-        } else if (ref.startsWith('d') || roadName.includes('route')) {
-          setSpeedLimit(80);
+          setSpeedLimit(spd > 115 ? 130 : 110);
+        } else if (roadName.includes('rocade') || roadName.includes('périphérique') || roadName.includes('voie rapide') || ref.startsWith('n')) {
+          setSpeedLimit(spd <= 80 ? 70 : (spd <= 100 ? 90 : 110));
+        } else if (roadName.includes('zone 30') || roadName.includes('rue piétonne') || spd <= 25) {
+          setSpeedLimit(30);
+        } else if (ref.startsWith('d') || roadName.includes('route départementale') || roadName.includes('route de')) {
+          setSpeedLimit(spd >= 75 ? 80 : 50);
         } else {
-          setSpeedLimit(50);
+          setSpeedLimit(spd <= 35 ? 30 : 50);
         }
       } else {
         setSpeedLimit(50);
@@ -1453,11 +1497,9 @@
       }
 
       // Baseline speed per transport mode
-      let baseSpeedKmh = 35;
-      if (state.activeRoute && state.activeRoute.distance && state.activeRoute.duration) {
-        // Calibrated baseline from route: distance / (rawDuration * 1.58)
-        const calibratedDurationSec = state.activeRoute.duration * 1.58;
-        baseSpeedKmh = Math.max(18, Math.min(90, (state.activeRoute.distance / calibratedDurationSec) * 3.6));
+      let baseSpeedKmh = 40;
+      if (state.activeRoute && state.activeRoute.distance && state.activeRoute.calibratedDuration) {
+        baseSpeedKmh = Math.max(18, Math.min(115, (state.activeRoute.distance / state.activeRoute.calibratedDuration) * 3.6));
       }
       if (mode === 'cycling') baseSpeedKmh = 14.5;
       if (mode === 'walking') baseSpeedKmh = 4.8;
